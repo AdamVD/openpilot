@@ -207,6 +207,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"EnableSunnylinkUploader", {PERSISTENT | BACKUP, BOOL}},
     {"LastSunnylinkPingTime", {CLEAR_ON_MANAGER_START, INT}},
     {"ParamsVersion", {PERSISTENT, INT}},
+    {"SunnylinkAutoRebootOnUpdate", {CLEAR_ON_MANAGER_START, BOOL}},
     {"SunnylinkCache_Roles", {PERSISTENT, STRING}},
     {"SunnylinkCache_Users", {PERSISTENT, STRING}},
     {"SunnylinkDongleId", {PERSISTENT, STRING}},

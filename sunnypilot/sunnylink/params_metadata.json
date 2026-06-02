@@ -1247,6 +1247,10 @@
     "title": "Subaru Stop and Go Manual Parking Brake",
     "description": ""
   },
+  "SunnylinkAutoRebootOnUpdate": {
+    "title": "sunnylink Auto Reboot On Update",
+    "description": ""
+  },
   "SunnylinkCache_Roles": {
     "title": "sunnylink Cache  Roles",
     "description": ""

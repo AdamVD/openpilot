@@ -14,6 +14,7 @@ from openpilot.sunnypilot.sunnylink.tools.generate_settings_schema import (
   generate_schema_json,
   collect_all_keys,
   collect_capability_refs,
+  _build_branch_options,
 )
 from openpilot.sunnypilot.sunnylink.capabilities import CAPABILITY_FIELDS
 
@@ -351,3 +352,37 @@ class TestItemCompleteness:
     assert lp is not None
     assert "options" in lp
     assert len(lp["options"]) == 3
+
+
+class TestBranchPickerInjection:
+  """UpdaterTargetBranch options are injected at generation time from live params."""
+
+  def test_target_branch_item_present(self, schema):
+    """The Software panel exposes a UpdaterTargetBranch multiple_button."""
+    software = next(p for p in schema["panels"] if p["id"] == "software")
+    item = next((i for i in _iter_panel_items(software) if i["key"] == "UpdaterTargetBranch"), None)
+    assert item is not None, "UpdaterTargetBranch picker missing from software panel"
+    assert item["widget"] == "multiple_button"
+
+  def test_options_ordered_like_on_device_picker(self):
+    """Mirrors selfdrive/ui/layouts/settings/software.py:_on_select_branch ordering."""
+    opts = _build_branch_options("foo,master,devel,my-long,nightly,devel-staging", "my-long")
+    assert [o["value"] for o in opts] == ["master", "nightly", "devel", "devel-staging", "my-long", "foo"]
+    assert all(o["value"] == o["label"] for o in opts)
+
+  def test_never_emits_empty_value(self):
+    """An empty target would bypass updated.py's fallback and run `git fetch origin ''`."""
+    for opts in (
+      _build_branch_options("master,devel", "master"),
+      _build_branch_options("", "sp-honda-202605-long"),
+    ):
+      assert opts and all(o["value"] for o in opts), f"empty value leaked: {opts}"
+
+  def test_falls_back_to_current_branch_when_none_available(self):
+    """Pre-first-check (no UpdaterAvailableBranches): offer only the current branch."""
+    assert _build_branch_options("", "sp-honda-202605-long") == \
+      [{"value": "sp-honda-202605-long", "label": "sp-honda-202605-long"}]
+
+  def test_empty_when_nothing_known(self):
+    """No branches and no current branch: caller leaves the static filler in place."""
+    assert _build_branch_options("", "") == []

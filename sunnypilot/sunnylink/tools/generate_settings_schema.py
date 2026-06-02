@@ -14,6 +14,7 @@ import json
 import os
 from collections.abc import Callable
 
+from openpilot.common.params import Params
 from openpilot.sunnypilot.sunnylink.capabilities import CAPABILITY_FIELDS, CAPABILITY_LABELS
 
 SCHEMA_VERSION = "1.0"
@@ -59,11 +60,48 @@ def _inject_dynamic_options(schema: dict) -> None:
   _walk_all_items(schema, visitor)
 
 
+def _build_branch_options(branches_str: str, current_branch: str) -> list[dict]:
+  """Build TargetBranch options from UpdaterAvailableBranches, ordered like the
+  on-device picker (selfdrive/ui/layouts/settings/software.py:_on_select_branch).
+
+  Never emits an empty value: an empty UpdaterTargetBranch would bypass updated.py's
+  current-branch fallback and produce a failing `git fetch origin ''`. When no remote
+  branches are known yet, fall back to the current branch (a harmless no-op choice).
+  """
+  branches = [b for b in branches_str.split(",") if b]
+  if branches:
+    for b in (current_branch, "devel-staging", "devel", "nightly", "nightly-dev", "master"):
+      if b in branches:
+        branches.remove(b)
+        branches.insert(0, b)
+    return [{"value": b, "label": b} for b in branches]
+  if current_branch:
+    return [{"value": current_branch, "label": current_branch}]
+  return []
+
+
+def _inject_branch_options(schema: dict) -> None:
+  """Populate UpdaterTargetBranch options from live params at generation time."""
+  params = Params()
+  current_branch = params.get("GitBranch") or ""
+  branches_str = params.get("UpdaterAvailableBranches") or ""
+  options = _build_branch_options(branches_str, current_branch)
+  if not options:
+    return  # GitBranch is PERSISTENT and always set in practice; leave the static filler
+
+  def visitor(item: dict) -> None:
+    if item.get("key") == "UpdaterTargetBranch":
+      item["options"] = options
+
+  _walk_all_items(schema, visitor)
+
+
 def _load_definition() -> dict:
   """Load settings_ui.json and inject dynamic options sourced from runtime data files."""
   with open(DEFINITION_PATH) as f:
     schema = json.load(f)
   _inject_dynamic_options(schema)
+  _inject_branch_options(schema)
   return schema
 
 

@@ -18,3 +18,18 @@ sections:
     enablement:
     - $ref: '#/macros/offroad'
     - $ref: '#/macros/advanced_only'
+  - key: UpdaterTargetBranch
+    widget: multiple_button
+    title: Target Branch
+    description: Select which branch to update from. When changed while parked, the device downloads the selected branch and
+      reboots to install it automatically.
+    options:
+    - value: master            # validator filler only; injector always overwrites at runtime
+      label: master
+    enablement:
+    - $ref: '#/macros/offroad'
+    - type: not
+      condition:
+        type: param
+        key: DisableUpdates
+        equals: true

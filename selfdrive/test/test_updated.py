@@ -210,6 +210,37 @@ class TestUpdated:
     self._wait_for_update(clear_param=True)
     self._check_update_state(True)
 
+  # A sunnylink-initiated branch switch (SunnylinkAutoRebootOnUpdate set) should
+  # reboot to install once the update finalizes, but only while offroad.
+  def test_branch_switch_auto_reboot_offroad(self):
+    self._start_updater(offroad=True)
+
+    # cycle with no update
+    self._wait_for_update(clear_param=True)
+    self._check_update_state(False)
+
+    # arm the auto-reboot and push an update to the remote
+    self.params.put_bool("SunnylinkAutoRebootOnUpdate", True)
+    self._make_commit()
+
+    # cycle to fetch + finalize, then expect a reboot request and the flag consumed
+    self._wait_for_update(timeout=60, clear_param=True)
+    assert self._read_param("DoReboot") == "1"
+    assert self.params.get("SunnylinkAutoRebootOnUpdate") is None
+
+  # The same armed flag must NOT reboot while onroad; it stays armed for later.
+  def test_branch_switch_no_reboot_onroad(self):
+    self._start_updater(offroad=False)
+
+    self._wait_for_update(clear_param=True)
+
+    self.params.put_bool("SunnylinkAutoRebootOnUpdate", True)
+    self._make_commit()
+
+    self._wait_for_update(timeout=60, clear_param=True)
+    assert self.params.get("DoReboot") is None
+    assert self.params.get_bool("SunnylinkAutoRebootOnUpdate")
+
   # Let the updater run for 10 cycles, and write an update every cycle
   @pytest.mark.skip("need to make this faster")
   def test_update_loop(self):

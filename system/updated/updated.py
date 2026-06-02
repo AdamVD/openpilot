@@ -230,7 +230,7 @@ class Updater:
   @property
   def target_branch(self) -> str:
     b: str | None = self.params.get("UpdaterTargetBranch")
-    if b is None:
+    if not b:  # None or empty: an empty target would produce `git fetch origin ''`
       b = self.get_branch(BASEDIR)
     b = SP_BRANCH_MIGRATIONS.get((HARDWARE.get_device_type(), b), b)
     return b
@@ -490,6 +490,13 @@ def main() -> None:
         params.put("UpdaterState", "idle")
         update_successful = (update_failed_count == 0)
         updater.set_params(update_successful, update_failed_count, exception)
+
+        # Install a sunnylink-initiated branch switch by rebooting once the update is finalized.
+        # Offroad-gated here as well as at set time, so we never reboot mid-drive.
+        if params.get_bool("SunnylinkAutoRebootOnUpdate") and updater.update_ready and params.get_bool("IsOffroad"):
+          cloudlog.warning("sunnylink branch switch finalized; rebooting to install")
+          params.remove("SunnylinkAutoRebootOnUpdate")
+          params.put_bool("DoReboot", True)
       except Exception:
         cloudlog.exception("uncaught updated exception while setting params, shouldn't happen")
 

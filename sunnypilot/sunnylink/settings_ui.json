@@ -1691,6 +1691,31 @@
                   "equals": true
                 }
               ]
+            },
+            {
+              "key": "UpdaterTargetBranch",
+              "widget": "multiple_button",
+              "title": "Target Branch",
+              "description": "Select which branch to update from. When changed while parked, the device downloads the selected branch and reboots to install it automatically.",
+              "options": [
+                {
+                  "value": "master",
+                  "label": "master"
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "offroad_only"
+                },
+                {
+                  "type": "not",
+                  "condition": {
+                    "type": "param",
+                    "key": "DisableUpdates",
+                    "equals": true
+                  }
+                }
+              ]
             }
           ]
         }

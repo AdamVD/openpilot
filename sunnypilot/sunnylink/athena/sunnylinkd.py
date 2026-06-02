@@ -265,6 +265,10 @@ def getParams(params_keys: list[str], compression: bool = False) -> str | dict[s
 
 @dispatcher.add_method
 def saveParams(params_to_update: dict[str, str], compression: bool = False) -> None:
+  # Capture the current branch before the write loop overwrites it, so we can detect a real change.
+  branch_change = "UpdaterTargetBranch" in params_to_update
+  old_branch = params.get("UpdaterTargetBranch") if branch_change else None
+
   for key, value in params_to_update.items():
     # disallow modifications to blocked parameters
     if key in BLOCKED_PARAMS:
@@ -282,6 +286,15 @@ def saveParams(params_to_update: dict[str, str], compression: bool = False) -> N
     params.put("ParamsVersion", str(current + 1))
   except Exception:
     pass
+
+  # A branch switch should download + auto-reboot immediately. Offroad only: the reboot
+  # is also re-gated in updated.py, but skipping the trigger onroad avoids a pointless fetch.
+  if branch_change and params.get_bool("IsOffroad"):
+    new_branch = params.get("UpdaterTargetBranch")
+    if new_branch and new_branch != old_branch:
+      cloudlog.info(f"sunnylinkd.saveParams: branch change {old_branch!r} -> {new_branch!r}, triggering update fetch")
+      params.put_bool("SunnylinkAutoRebootOnUpdate", True)
+      os.system("pkill -SIGHUP -f system.updated.updated")
 
 
 def startLocalProxy(global_end_event: threading.Event, remote_ws_uri: str, local_port: int) -> dict[str, int]:
