@@ -741,7 +741,7 @@
                   "key": "LaneChangeAssistMinTFollow",
                   "widget": "option",
                   "title": "Minimum Follow Gap",
-                  "description": "Tightest follow time-gap allowed while passing. Lower closes the gap more aggressively; it never goes below your normal personality gap.",
+                  "description": "Tightest follow time-gap while passing: the car closes from your normal follow gap down to this value, then eases back. Lower is more aggressive. Capped at your normal gap, so this only ever tightens the follow distance, never loosens it.",
                   "min": 0.9,
                   "max": 1.45,
                   "step": 0.05,
