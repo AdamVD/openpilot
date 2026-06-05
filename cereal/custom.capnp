@@ -194,6 +194,7 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   aTarget @5 :Float32;
   events @6 :List(OnroadEventSP.Event);
   e2eAlerts @7 :E2eAlerts;
+  passingAssist @8 :PassingAssist;
 
   struct DynamicExperimentalControl {
     state @0 :DynamicExperimentalControlState;
@@ -295,6 +296,22 @@ struct LongitudinalPlanSP @0xf35cc4560bbf6ec2 {
   struct E2eAlerts {
     greenLightAlert @0 :Bool;
     leadDepartAlert @1 :Bool;
+  }
+
+  # Passing Assist: longitudinal lane-change boost telemetry (for log-based verification/tuning)
+  struct PassingAssist {
+    active @0 :Bool;        # boost currently engaged
+    engagement @1 :Float32; # 0..1 ramp factor
+    tFollow @2 :Float32;    # effective follow time-gap commanded (s)
+    accelHeadroom @3 :Float32; # extra accel ceiling applied (m/s^2)
+    overspeed @4 :Float32;  # extra cruise speed allowed (m/s)
+    direction @5 :Direction; # latched maneuver direction
+
+    enum Direction {
+      none @0;
+      left @1;
+      right @2;
+    }
   }
 }
 

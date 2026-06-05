@@ -525,6 +525,70 @@
     "title": "LaGD Value Cache",
     "description": ""
   },
+  "LaneChangeAssistEnabled": {
+    "title": "Passing Assist",
+    "description": "When you signal a lane change at highway speed while following a slower car, briefly close the follow gap, add an acceleration boost, and allow a small overspeed to help complete the pass. Falls back to your normal follow distance if you don't change lanes."
+  },
+  "LaneChangeAssistAccel": {
+    "title": "Acceleration Boost",
+    "description": "Extra acceleration allowed during the pass. Higher feels more eager; the car never exceeds its built-in acceleration and braking limits.",
+    "min": 0.0,
+    "max": 0.8,
+    "step": 0.1,
+    "unit": "m/s²"
+  },
+  "LaneChangeAssistDuration": {
+    "title": "Boost Duration",
+    "description": "How long the boost lasts after you signal, then it eases back to your normal follow distance.",
+    "min": 3,
+    "max": 15,
+    "step": 1,
+    "unit": "s"
+  },
+  "LaneChangeAssistMinTFollow": {
+    "title": "Minimum Follow Gap",
+    "description": "Tightest follow time-gap allowed while passing. Lower closes the gap more aggressively; it never goes below your normal personality gap.",
+    "min": 0.9,
+    "max": 1.45,
+    "step": 0.05,
+    "unit": "s"
+  },
+  "LaneChangeAssistOverspeed": {
+    "title": "Overspeed Allowance",
+    "description": "How far above your set speed the car may briefly drift to complete the pass.",
+    "min": 0,
+    "max": 5,
+    "step": 1,
+    "unit": {
+      "metric": "km/h",
+      "imperial": "mph"
+    }
+  },
+  "LaneChangeAssistDirection": {
+    "title": "Direction",
+    "description": "Which blinker arms the boost. Left only avoids triggering on highway exits.",
+    "options": [
+      {
+        "value": 0,
+        "label": "Left Only"
+      },
+      {
+        "value": 1,
+        "label": "Both"
+      }
+    ]
+  },
+  "LaneChangeAssistMinSpeed": {
+    "title": "Minimum Speed",
+    "description": "Lowest speed at which the boost will engage.",
+    "min": 25,
+    "max": 70,
+    "step": 5,
+    "unit": {
+      "metric": "km/h",
+      "imperial": "mph"
+    }
+  },
   "LaneTurnDesire": {
     "title": "Lane Turn Desire",
     "description": "Force model to plan an intent to turn based on blinker"

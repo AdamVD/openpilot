@@ -11,6 +11,7 @@ from openpilot.common.constants import CV
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
+from openpilot.sunnypilot.selfdrive.controls.lib.passing_assist import PassingAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
@@ -29,6 +30,7 @@ class LongitudinalPlannerSP:
     self.scc = SmartCruiseControl()
     self.resolver = SpeedLimitResolver()
     self.sla = SpeedLimitAssist(CP, CP_SP)
+    self.pla = PassingAssist()
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
@@ -62,8 +64,12 @@ class LongitudinalPlannerSP:
     self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
+    # Passing Assist raises only the cruise ceiling, so the min() below still lets a
+    # lower target (curve, speed limit, lead) bind — the overspeed degrades safely.
+    cruise_target = v_cruise + self.pla.overspeed
+
     targets = {
-      LongitudinalPlanSource.cruise: (v_cruise, a_ego),
+      LongitudinalPlanSource.cruise: (cruise_target, a_ego),
       LongitudinalPlanSource.sccVision: (self.scc.vision.output_v_target, self.scc.vision.output_a_target),
       LongitudinalPlanSource.sccMap: (self.scc.map.output_v_target, self.scc.map.output_a_target),
       LongitudinalPlanSource.speedLimitAssist: (self.sla.output_v_target, self.sla.output_a_target),
@@ -137,5 +143,14 @@ class LongitudinalPlannerSP:
     e2eAlerts = longitudinalPlanSP.e2eAlerts
     e2eAlerts.greenLightAlert = self.e2e_alerts_helper.green_light_alert
     e2eAlerts.leadDepartAlert = self.e2e_alerts_helper.lead_depart_alert
+
+    # Passing Assist
+    passingAssist = longitudinalPlanSP.passingAssist
+    passingAssist.active = self.pla.active
+    passingAssist.engagement = float(self.pla.engagement)
+    passingAssist.tFollow = float(self.pla.t_follow) if self.pla.t_follow is not None else 0.0
+    passingAssist.accelHeadroom = float(self.pla.accel_headroom)
+    passingAssist.overspeed = float(self.pla.overspeed)
+    passingAssist.direction = self.pla.latched_direction
 
     pm.send('longitudinalPlanSP', plan_sp_send)

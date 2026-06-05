@@ -140,6 +140,14 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"ApiCache_DriveStats", {PERSISTENT, JSON}},
     {"AutoLaneChangeBsmDelay", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"AutoLaneChangeTimer", {PERSISTENT | BACKUP, INT, "0"}},
+    // Passing Assist: longitudinal boost (closer follow + accel kick + brief overspeed) during a highway lane change
+    {"LaneChangeAssistEnabled", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"LaneChangeAssistAccel", {PERSISTENT | BACKUP, FLOAT, "0.4"}},        // m/s^2 extra accel headroom
+    {"LaneChangeAssistDuration", {PERSISTENT | BACKUP, INT, "7"}},         // seconds of boost from blinker
+    {"LaneChangeAssistMinTFollow", {PERSISTENT | BACKUP, FLOAT, "1.1"}},   // s, follow time-gap floor while boosting
+    {"LaneChangeAssistOverspeed", {PERSISTENT | BACKUP, INT, "2"}},        // mph briefly allowed above set speed
+    {"LaneChangeAssistDirection", {PERSISTENT | BACKUP, INT, "0"}},        // 0 = left only (passing), 1 = both
+    {"LaneChangeAssistMinSpeed", {PERSISTENT | BACKUP, INT, "45"}},        // mph, minimum speed to engage
     {"BlinkerLateralReengageDelay", {PERSISTENT | BACKUP, INT, "0"}},  // seconds
     {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
     {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},

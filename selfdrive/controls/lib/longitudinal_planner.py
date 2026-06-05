@@ -11,6 +11,7 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
+from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import get_T_FOLLOW
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
@@ -110,7 +111,21 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # No change cost when user is controlling the speed, or when standstill
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
 
+    # Passing Assist: compute the lane-change boost before accel limits so its accel
+    # headroom is still subject to in-turn limiting below (a no-op when disabled).
+    self.pla.update(
+      left_blinker=sm['carState'].leftBlinker,
+      right_blinker=sm['carState'].rightBlinker,
+      left_blindspot=sm['carState'].leftBlindspot,
+      right_blindspot=sm['carState'].rightBlindspot,
+      v_ego=v_ego,
+      lead_present=sm['radarState'].leadOne.status,
+      t_follow_base=get_T_FOLLOW(sm['selfdriveState'].personality),
+    )
+
     accel_clip = [ACCEL_MIN, get_max_accel(v_ego)]
+    if self.pla.accel_headroom > 0.0:
+      accel_clip[1] = min(accel_clip[1] + self.pla.accel_headroom, max(A_CRUISE_MAX_VALS))
     steer_angle_without_offset = sm['carState'].steeringAngleDeg - sm['liveParameters'].angleOffsetDeg
     accel_clip = limit_accel_in_turns(v_ego, steer_angle_without_offset, accel_clip, self.CP)
 
@@ -138,7 +153,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     self.mpc.set_weights(prev_accel_constraint, personality=sm['selfdriveState'].personality)
     self.mpc.set_cur_state(self.v_desired_filter.x, self.a_desired)
-    self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality)
+    self.mpc.update(sm['radarState'], v_cruise, personality=sm['selfdriveState'].personality, t_follow=self.pla.t_follow)
 
     self.v_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.v_solution)
     self.a_desired_trajectory = np.interp(CONTROL_N_T_IDX, T_IDXS_MPC, self.mpc.a_solution)

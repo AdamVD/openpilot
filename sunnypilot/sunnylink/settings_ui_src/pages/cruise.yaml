@@ -64,6 +64,108 @@ sections:
         type: capability
         field: has_longitudinal_control
         equals: true
+- id: passing_assist
+  title: Passing Assist
+  description: Longitudinal boost during a highway lane change
+  enablement:
+  - $ref: '#/macros/longitudinal'
+  items:
+  - key: LaneChangeAssistEnabled
+    widget: toggle
+    title: Passing Assist
+    description: When you signal a lane change at highway speed while following a slower car, briefly close the follow gap, add
+      an acceleration boost, and allow a small overspeed to help complete the pass. Falls back to your normal follow distance
+      if you don't change lanes.
+    enablement:
+    - $ref: '#/macros/longitudinal'
+  sub_panels:
+  - id: passing_assist_settings
+    label: Passing Assist Settings
+    trigger_key: LaneChangeAssistEnabled
+    trigger_condition:
+      type: param
+      key: LaneChangeAssistEnabled
+      equals: true
+    items:
+    - key: LaneChangeAssistDirection
+      widget: multiple_button
+      title: Direction
+      description: Which blinker arms the boost. Left only avoids triggering on highway exits.
+      options:
+      - value: 0
+        label: Left Only
+      - value: 1
+        label: Both
+      enablement:
+      - type: param
+        key: LaneChangeAssistEnabled
+        equals: true
+    - key: LaneChangeAssistMinSpeed
+      widget: option
+      title: Minimum Speed
+      description: Lowest speed at which the boost will engage.
+      min: 25
+      max: 70
+      step: 5
+      unit:
+        metric: km/h
+        imperial: mph
+      enablement:
+      - type: param
+        key: LaneChangeAssistEnabled
+        equals: true
+    - key: LaneChangeAssistMinTFollow
+      widget: option
+      title: Minimum Follow Gap
+      description: Tightest follow time-gap allowed while passing. Lower closes the gap more aggressively; it never goes below
+        your normal personality gap.
+      min: 0.9
+      max: 1.45
+      step: 0.05
+      unit: s
+      enablement:
+      - type: param
+        key: LaneChangeAssistEnabled
+        equals: true
+    - key: LaneChangeAssistAccel
+      widget: option
+      title: Acceleration Boost
+      description: Extra acceleration allowed during the pass. Higher feels more eager; the car never exceeds its built-in
+        acceleration and braking limits.
+      min: 0.0
+      max: 0.8
+      step: 0.1
+      unit: m/s²
+      enablement:
+      - type: param
+        key: LaneChangeAssistEnabled
+        equals: true
+    - key: LaneChangeAssistOverspeed
+      widget: option
+      title: Overspeed Allowance
+      description: How far above your set speed the car may briefly drift to complete the pass.
+      min: 0
+      max: 5
+      step: 1
+      unit:
+        metric: km/h
+        imperial: mph
+      enablement:
+      - type: param
+        key: LaneChangeAssistEnabled
+        equals: true
+    - key: LaneChangeAssistDuration
+      widget: option
+      title: Boost Duration
+      description: How long the boost lasts after you signal, then it eases back to your normal follow distance.
+      min: 3
+      max: 15
+      step: 1
+      unit: s
+      enablement:
+      - type: param
+        key: LaneChangeAssistEnabled
+        equals: true
 - id: custom_acc_increments
   title: Custom ACC Speed Intervals
   description: ''
