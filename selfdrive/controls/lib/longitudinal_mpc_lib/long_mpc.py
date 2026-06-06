@@ -32,7 +32,15 @@ COST_E_DIM = 5
 COST_DIM = COST_E_DIM + 1
 CONSTR_DIM = 4
 
-X_EGO_OBSTACLE_COST = 3.
+# Lowered 3.0 -> 1.75 (2026-06-06) to loosen the follow loop on the resonant Honda NIDEC plant.
+# The lead-follow oscillation is a source-flip limit cycle (cruise<->lead0 every ~6-10s, pcm_off
+# swinging -1.5<->+4.5) at the plant pole 1/K (~8.5s); it is ALSO the source of the "downshift
+# burst" feel (every burst is a cruise-phase rebound, not genuine close-quarters accel: steady
+# follow with vrel~0 + stable gap downshifts 0% of the time). Lower obstacle-cost = lower outer
+# follow-loop gain = less excitation of the plant resonance. Braking authority (a_min, danger
+# zone) is untouched, so this only loosens gap-holding, not safety. Next step toward ~1.5 if the
+# cycle only partially damps. Set at runtime via cost_set (no acados regen needed).
+X_EGO_OBSTACLE_COST = 1.75
 X_EGO_COST = 0.
 V_EGO_COST = 0.
 A_EGO_COST = 0.
