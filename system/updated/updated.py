@@ -500,9 +500,12 @@ def main() -> None:
       except Exception:
         cloudlog.exception("uncaught updated exception while setting params, shouldn't happen")
 
-      # infrequent attempts if we successfully updated recently
+      # Poll every 10 min (was 1.5h) so a pushed update lands well within a typical
+      # parked-on-WiFi window. A check is just two cheap `git ls-remote` calls and the
+      # sleep is a blocked thread, so the interval is negligible against the offroad
+      # power budget (device draws ~1-2W just being on; updater is noise). 5 min on failure.
       wait_helper.user_request = UserRequest.NONE
-      wait_helper.sleep(5*60 if update_failed_count > 0 else 1.5*60*60)
+      wait_helper.sleep(5*60 if update_failed_count > 0 else 10*60)
 
 
 if __name__ == "__main__":
