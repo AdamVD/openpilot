@@ -10,6 +10,7 @@ from msgq.visionipc import VisionIpcClient, VisionStreamType
 
 
 from openpilot.common.params import Params
+from openpilot.common.constants import CV
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper, DT_CTRL
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.gps import get_gps_location_service
@@ -108,6 +109,8 @@ class SelfdriveD(CruiseHelper):
     self.is_metric = self.params.get_bool("IsMetric")
     self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
     self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
+    self.steer_saturated_min_speed = self.params.get("SteerSaturatedMinSpeed", return_default=True) * \
+      (CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS)
 
     car_recognized = self.CP.brand != 'mock'
 
@@ -420,7 +423,10 @@ class SelfdriveD(CruiseHelper):
       undershooting = abs(desired_lateral_accel) / abs(1e-3 + actual_lateral_accel) > 1.2
       turning = abs(desired_lateral_accel) > 1.0
       # TODO: lac.saturated includes speed and other checks, should be pulled out
-      if undershooting and turning and lac.saturated:
+      # SteerSaturatedMinSpeed: suppress the low-speed "Take Control" nag (Odyssey can't make
+      # tight slow turns under lateral control; driver isn't hands-off there). Keeps the warning
+      # at highway speeds where hands-off is more likely.
+      if undershooting and turning and lac.saturated and CS.vEgo >= self.steer_saturated_min_speed:
         self.events.add(EventName.steerSaturated)
 
     # Check for FCW
@@ -599,6 +605,8 @@ class SelfdriveD(CruiseHelper):
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       self.experimental_mode = self.params.get_bool("ExperimentalMode") and self.CP.openpilotLongitudinalControl
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+      self.steer_saturated_min_speed = self.params.get("SteerSaturatedMinSpeed", return_default=True) * \
+        (CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS)
 
       self.mads.read_params()
       time.sleep(0.1)

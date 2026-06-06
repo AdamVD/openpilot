@@ -92,6 +92,23 @@ sections:
       - type: param
         key: BlinkerPauseLateralControl
         equals: true
+- id: steer_alerts
+  title: Steering Alerts
+  description: When the "Take Control" steering-saturation warning appears
+  items:
+  - key: SteerSaturatedMinSpeed
+    widget: option
+    title: Minimum Speed for "Take Control" Warning
+    description: Below this speed the steering-saturation "Take Control / Turn Exceeds Steering Limit"
+      warning is suppressed (the car can't make tight slow turns under lateral control, where you're
+      not hands-off anyway). The warning still appears at higher speeds. Note it never appears below
+      ~22 mph regardless.
+    min: 20
+    max: 80
+    step: 5
+    unit:
+      metric: km/h
+      imperial: mph
 - id: torque
   title: Torque Control
   description: Steering torque tuning and lateral control method

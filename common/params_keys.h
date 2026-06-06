@@ -151,6 +151,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"BlinkerLateralReengageDelay", {PERSISTENT | BACKUP, INT, "0"}},  // seconds
     {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
     {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},
+    {"SteerSaturatedMinSpeed", {PERSISTENT | BACKUP, INT, "50"}},  // MPH or km/h; below this the "Take Control" steer-saturation nag is suppressed
     {"Brightness", {PERSISTENT | BACKUP, INT, "0"}},
     {"CarList", {PERSISTENT, JSON}},
     {"CarParamsSP", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BYTES}},
@@ -278,6 +279,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"MapTargetVelocities", {CLEAR_ON_ONROAD_TRANSITION, STRING}},
     {"SmartCruiseControlMap", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"SmartCruiseControlVision", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"CurveSpeedLatAccel", {PERSISTENT | BACKUP, FLOAT, "2.5"}},  // m/s^2 max lateral accel for curve speed (VTSC+MTSC); higher = faster through curves
 
     // Torque lateral control custom params
     {"CustomTorqueParams", {PERSISTENT | BACKUP , BOOL}},

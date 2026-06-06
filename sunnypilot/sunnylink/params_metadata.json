@@ -198,6 +198,14 @@
     "title": "Current Route",
     "description": ""
   },
+  "CurveSpeedLatAccel": {
+    "title": "Curve Speed (Max Lateral G)",
+    "description": "How hard the car is willing to corner before slowing for curves. Higher carries more speed through highway curves; lower is more cautious. Applies to both Vision and Map curve control.",
+    "min": 1.5,
+    "max": 3.5,
+    "step": 0.1,
+    "unit": "m/s²"
+  },
   "CustomAccIncrementsEnabled": {
     "title": "Custom ACC Increments",
     "description": ""
@@ -1302,6 +1310,14 @@
   "StandstillTimer": {
     "title": "[TIZI/TICI only] Standstill Timer",
     "description": "Show a timer on the HUD when the car is at a standstill."
+  },
+  "SteerSaturatedMinSpeed": {
+    "title": "Minimum Speed for \"Take Control\" Warning",
+    "description": "Below this speed the steering-saturation \"Take Control / Turn Exceeds Steering Limit\" warning is suppressed (the car can't make tight slow turns under lateral control, where you're not hands-off anyway). The warning still appears at higher speeds. Note it never appears below ~22 mph regardless.",
+    "min": 20,
+    "max": 80,
+    "step": 5,
+    "unit": "mph"
   },
   "SubaruStopAndGo": {
     "title": "Subaru Stop and Go",

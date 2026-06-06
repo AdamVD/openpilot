@@ -27,7 +27,9 @@ _TURNING_LAT_ACC_TH = 1.6  # Lat Acc threshold to trigger turning state.
 _LEAVING_LAT_ACC_TH = 1.3  # Lat Acc threshold to trigger leaving turn state.
 _FINISH_LAT_ACC_TH = 1.1  # Lat Acc threshold to trigger the end of the turn cycle.
 
-_A_LAT_REG_MAX = 2.  # Maximum lateral acceleration
+_A_LAT_REG_MAX = 2.  # Maximum lateral acceleration (default; user-tunable via CurveSpeedLatAccel)
+_A_LAT_REG_MIN_CLIP = 1.5  # m/s^2 floor for the user knob (very cautious)
+_A_LAT_REG_MAX_CLIP = 3.5  # m/s^2 ceiling for the user knob (aggressive)
 
 _NO_OVERSHOOT_TIME_HORIZON = 4.  # s. Time to use for velocity desired based on a_target when not overshooting.
 
@@ -60,6 +62,8 @@ class SmartCruiseControlVision:
     self.is_enabled = False
     self.is_active = False
     self.enabled = self.params.get_bool("SmartCruiseControlVision")
+    self.a_lat_reg_max = float(np.clip(self.params.get("CurveSpeedLatAccel", return_default=True),
+                                       _A_LAT_REG_MIN_CLIP, _A_LAT_REG_MAX_CLIP))
     self.v_cruise_setpoint = 0.
 
     self.state = VisionState.disabled
@@ -78,6 +82,8 @@ class SmartCruiseControlVision:
   def _update_params(self) -> None:
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
       self.enabled = self.params.get_bool("SmartCruiseControlVision")
+      self.a_lat_reg_max = float(np.clip(self.params.get("CurveSpeedLatAccel", return_default=True),
+                                         _A_LAT_REG_MIN_CLIP, _A_LAT_REG_MAX_CLIP))
 
   def _update_calculations(self, sm: messaging.SubMaster) -> None:
     if not self.long_enabled:
@@ -97,7 +103,7 @@ class SmartCruiseControlVision:
       max_curve = self.max_pred_lat_acc / (v_ego**2)
 
       # Get the target velocity for the maximum curve
-      self.v_target = (_A_LAT_REG_MAX / max_curve) ** 0.5
+      self.v_target = (self.a_lat_reg_max / max_curve) ** 0.5
 
   def _update_state_machine(self) -> tuple[bool, bool]:
     # ENABLED, ENTERING, TURNING, LEAVING, OVERRIDING

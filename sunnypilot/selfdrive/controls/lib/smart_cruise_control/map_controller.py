@@ -20,6 +20,9 @@ TO_RADIANS = math.pi / 180
 TO_DEGREES = 180 / math.pi
 TARGET_JERK = -0.6  # m/s^3 There's some jounce limits that are not consistent so we're fudging this some
 TARGET_ACCEL = -1.2  # m/s^2 should match up with the long planner limit
+MAPD_BASE_LAT_ACCEL = 2.0  # m/s^2 the lateral accel the mapd binary uses to precompute MapTargetVelocities
+_A_LAT_REG_MIN_CLIP = 1.5   # m/s^2 floor for the user knob (very cautious)
+_A_LAT_REG_MAX_CLIP = 3.5   # m/s^2 ceiling for the user knob (aggressive)
 TARGET_OFFSET = 1.0  # seconds - This controls how soon before the curve you reach the target velocity. It also helps
                      # reach the target velocity when inaccuracies in the distance modeling logic would cause overshoot.
                      # The value is multiplied against the target velocity to determine the additional distance. This is
@@ -74,6 +77,10 @@ class SmartCruiseControlMap:
     self.params = Params()
     self.mem_params = Params("/dev/shm/params") if platform.system() != "Darwin" else self.params
     self.enabled = self.params.get_bool("SmartCruiseControlMap")
+    # sqrt(CurveSpeedLatAccel / MAPD_BASE_LAT_ACCEL); v_target scales as sqrt(lat_accel)
+    _lat_accel = min(max(self.params.get("CurveSpeedLatAccel", return_default=True),
+                         _A_LAT_REG_MIN_CLIP), _A_LAT_REG_MAX_CLIP)
+    self.curve_scale = math.sqrt(_lat_accel / MAPD_BASE_LAT_ACCEL)
     self.long_enabled = False
     self.long_override = False
     self.is_enabled = False
@@ -89,7 +96,8 @@ class SmartCruiseControlMap:
 
   def get_v_target_from_control(self) -> float:
     if self.is_active:
-      return max(self.v_target, MIN_V)
+      # mapd precomputes velocities at MAPD_BASE_LAT_ACCEL; v ~ sqrt(lat_accel), so rescale to the user knob.
+      return max(self.v_target * self.curve_scale, MIN_V)
 
     return V_CRUISE_UNSET
 
@@ -99,6 +107,9 @@ class SmartCruiseControlMap:
   def update_params(self):
     if self.frame % int(PARAMS_UPDATE_PERIOD / DT_MDL) == 0:
       self.enabled = self.params.get_bool("SmartCruiseControlMap")
+      lat_accel = min(max(self.params.get("CurveSpeedLatAccel", return_default=True),
+                          _A_LAT_REG_MIN_CLIP), _A_LAT_REG_MAX_CLIP)
+      self.curve_scale = math.sqrt(lat_accel / MAPD_BASE_LAT_ACCEL)
 
   def update_calculations(self) -> None:
     self.last_position = coordinate_from_param("LastGPSPosition", self.mem_params) or Coordinate(0.0, 0.0)

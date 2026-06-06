@@ -377,3 +377,30 @@ sections:
       - type: capability
         field: has_icbm
         equals: true
+  - key: CurveSpeedLatAccel
+    widget: option
+    title: Curve Speed (Max Lateral G)
+    description: How hard the car is willing to corner before slowing for curves. Higher carries more speed
+      through highway curves; lower is more cautious. Applies to both Vision and Map curve control.
+    min: 1.5
+    max: 3.5
+    step: 0.1
+    unit: m/s²
+    visibility:
+    - type: any
+      conditions:
+      - type: capability
+        field: has_longitudinal_control
+        equals: true
+      - type: capability
+        field: has_icbm
+        equals: true
+    enablement:
+    - type: any
+      conditions:
+      - type: param
+        key: SmartCruiseControlVision
+        equals: true
+      - type: param
+        key: SmartCruiseControlMap
+        equals: true

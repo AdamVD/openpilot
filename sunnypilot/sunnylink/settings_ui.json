@@ -269,6 +269,26 @@
           ]
         },
         {
+          "id": "steer_alerts",
+          "title": "Steering Alerts",
+          "description": "When the \"Take Control\" steering-saturation warning appears",
+          "items": [
+            {
+              "key": "SteerSaturatedMinSpeed",
+              "widget": "option",
+              "title": "Minimum Speed for \"Take Control\" Warning",
+              "description": "Below this speed the steering-saturation \"Take Control / Turn Exceeds Steering Limit\" warning is suppressed (the car can't make tight slow turns under lateral control, where you're not hands-off anyway). The warning still appears at higher speeds. Note it never appears below ~22 mph regardless.",
+              "min": 20,
+              "max": 80,
+              "step": 5,
+              "unit": {
+                "metric": "km/h",
+                "imperial": "mph"
+              }
+            }
+          ]
+        },
+        {
           "id": "torque",
           "title": "Torque Control",
           "description": "Steering torque tuning and lateral control method",
@@ -1177,6 +1197,50 @@
                     {
                       "type": "capability",
                       "field": "has_icbm",
+                      "equals": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "key": "CurveSpeedLatAccel",
+              "widget": "option",
+              "title": "Curve Speed (Max Lateral G)",
+              "description": "How hard the car is willing to corner before slowing for curves. Higher carries more speed through highway curves; lower is more cautious. Applies to both Vision and Map curve control.",
+              "min": 1.5,
+              "max": 3.5,
+              "step": 0.1,
+              "unit": "m/s\u00b2",
+              "visibility": [
+                {
+                  "type": "any",
+                  "conditions": [
+                    {
+                      "type": "capability",
+                      "field": "has_longitudinal_control",
+                      "equals": true
+                    },
+                    {
+                      "type": "capability",
+                      "field": "has_icbm",
+                      "equals": true
+                    }
+                  ]
+                }
+              ],
+              "enablement": [
+                {
+                  "type": "any",
+                  "conditions": [
+                    {
+                      "type": "param",
+                      "key": "SmartCruiseControlVision",
+                      "equals": true
+                    },
+                    {
+                      "type": "param",
+                      "key": "SmartCruiseControlMap",
                       "equals": true
                     }
                   ]
