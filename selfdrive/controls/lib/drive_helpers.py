@@ -39,12 +39,23 @@ def clip_curvature(v_ego, prev_curvature, new_curvature, roll) -> tuple[float, b
   return float(new_curvature), limited_accel or limited_max_curv
 
 
-def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.3):
+def get_accel_from_plan(speeds, accels, t_idxs, action_t=DT_MDL, vEgoStopping=0.3, action_t_brake=None):
   if len(speeds) == len(t_idxs):
     v_now = speeds[0]
     a_now = accels[0]
-    v_target = np.interp(action_t, t_idxs, speeds)
-    a_target = 2 * (v_target - v_now) / (action_t) - a_now
+    at = action_t
+    if action_t_brake is not None:
+      # Asymmetric actuator horizon (Odyssey NIDEC two-plant fix, FINDINGS_channel_plants_2026-06-09):
+      # the friction brake responds in ~0.12s vs the PCM gas/engine-brake servo's 0.5-0.65s, so a single
+      # symmetric action_t over-anticipates braking by ~0.35s (early/jumpy). Blend to the shorter brake
+      # horizon ONLY when the plan demands decel beyond the engine-brake knee (same boundary as the
+      # carcontroller's friction handoff) — keyed on planned accel, NOT dv sign, so gentle lift-offs
+      # (PCM realm, slow plant) keep the long horizon. Continuous blend, no chatter.
+      a_probe = np.interp(action_t, t_idxs, accels)
+      w_brk = np.clip((-a_probe - 0.10) / 0.25, 0.0, 1.0)  # 0 above -0.10 m/s^2, 1 below -0.35
+      at = (1.0 - w_brk) * action_t + w_brk * action_t_brake
+    v_target = np.interp(at, t_idxs, speeds)
+    a_target = 2 * (v_target - v_now) / at - a_now
   else:
     v_now = 0.0
     v_target = 0.0
