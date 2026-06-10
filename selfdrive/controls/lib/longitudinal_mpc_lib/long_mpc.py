@@ -84,7 +84,12 @@ def get_T_FOLLOW(personality=log.LongitudinalPersonality.standard):
   elif personality==log.LongitudinalPersonality.standard:
     return 1.45
   elif personality==log.LongitudinalPersonality.aggressive:
-    return 1.25
+    # 2026-06-09: 1.25 -> 1.10. The +6m STOP_DISTANCE constant in
+    # get_safe_obstacle_distance inflates effective headway (1.25s reads as
+    # ~1.45s at 30 m/s, ~1.65s at 15), so stock "aggressive" never felt
+    # aggressive. Gap tracking itself measured tight (actual/desired 0.98 at
+    # standard, drive 00000027) -- the target, not the tracking, was the gap.
+    return 1.10
   else:
     raise NotImplementedError("Longitudinal personality not supported")
 

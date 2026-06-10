@@ -38,6 +38,12 @@ class LongitudinalPlannerSP:
     self.output_v_target = 0.
     self.output_a_target = 0.
 
+    # Smoothed (vEgo - vEgoCluster) bias so the CLUSTER speed lands on the set
+    # point (stock Honda ACC regulates cluster speed; openpilot regulates true
+    # vEgo, which on the '18 Odyssey displays ~0.5 mph under set -- measured
+    # -0.49 mph median, drive 00000027). Positive-only: never hold below set.
+    self.cluster_offset = 0.
+
   def is_e2e(self, sm: messaging.SubMaster) -> bool:
     experimental_mode = sm['selfdriveState'].experimentalMode
     if not self.dec.active():
@@ -64,9 +70,15 @@ class LongitudinalPlannerSP:
     self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
+    # Cluster-display correction: track the gap only while moving at speed with a
+    # live cluster reading; freeze (don't decay) otherwise. Clamped to +0.6 m/s.
+    if v_ego > 5.0 and CS.vEgoCluster > 1.0:
+      raw = min(max(v_ego - CS.vEgoCluster, 0.0), 0.6)
+      self.cluster_offset += 0.01 * (raw - self.cluster_offset)  # tau ~5s at 20Hz
+
     # Passing Assist raises only the cruise ceiling, so the min() below still lets a
     # lower target (curve, speed limit, lead) bind — the overspeed degrades safely.
-    cruise_target = v_cruise + self.pla.overspeed
+    cruise_target = v_cruise + self.cluster_offset + self.pla.overspeed
 
     targets = {
       LongitudinalPlanSource.cruise: (cruise_target, a_ego),

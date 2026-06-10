@@ -18,7 +18,12 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
-A_CRUISE_MAX_VALS = [1.6, 1.2, 0.8, 0.6]
+# 2026-06-09: trimmed toward the MEASURED Odyssey NIDEC deliverable (rail tests, drive 00000027:
+# settled aego ~0.65-0.70 @ 14-17 m/s, ~0.45-0.65 @ 24-31 m/s with pcm_off railed at 8; the
+# pcm_off->aego curve is flat from ~3 to 8, so the PCM's internal accel schedule is the ceiling).
+# Stock vals [1.6, 1.2, 0.8, 0.6] promised ~2x the plant above 20 m/s -> permanent integrator
+# pressure + rail-unwind overshoot. Honest plans also calm the follow loop.
+A_CRUISE_MAX_VALS = [1.6, 1.0, 0.65, 0.5]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
