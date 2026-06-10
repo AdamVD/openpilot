@@ -71,9 +71,14 @@ class LongitudinalPlannerSP:
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
     # Cluster-display correction: track the gap only while moving at speed with a
-    # live cluster reading; freeze (don't decay) otherwise. Clamped to +0.6 m/s.
+    # live cluster reading; freeze (don't decay) otherwise. Clamped to +0.75 m/s.
+    # +0.15 m/s margin on top of the measured under-read: compensating the gap alone
+    # left the displayed speed straddling the set number (median +0.24 mph, drive
+    # 0000002a) and the dash floor-rounds, so it still read 1-under half the time.
+    # The margin parks the display ~0.5 mph above set -- floors to the set number,
+    # comfortably below +1.
     if v_ego > 5.0 and CS.vEgoCluster > 1.0:
-      raw = min(max(v_ego - CS.vEgoCluster, 0.0), 0.6)
+      raw = min(max(v_ego - CS.vEgoCluster, 0.0) + 0.15, 0.75)
       self.cluster_offset += 0.01 * (raw - self.cluster_offset)  # tau ~5s at 20Hz
 
     # Passing Assist raises only the cruise ceiling, so the min() below still lets a
