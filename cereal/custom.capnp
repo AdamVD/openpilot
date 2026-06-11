@@ -452,6 +452,12 @@ struct BackupManagerSP @0xf98d843bfd7004a3 {
 
 struct CarStateSP @0xb86e6369214c01c8 {
   speedLimit @0 :Float32;
+  # 10AT shift telemetry (Honda Odyssey): TCU target gear (announces shifts ~0.3-1.0s
+  # early), actual current gear, shift-execution flag. 0 = unknown/not a forward gear.
+  # Rides the qlog at 10Hz -> passive shift-map learning on every drive.
+  transTargetGear @1 :UInt8;
+  transActualGear @2 :UInt8;
+  transShiftActive @3 :Bool;
 }
 
 struct LiveMapDataSP @0xf416ec09499d9d19 {
