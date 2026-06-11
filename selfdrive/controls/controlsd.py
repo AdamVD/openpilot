@@ -133,6 +133,14 @@ class Controls(ControlsExt):
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, self.CP_SP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     actuators.accel = float(self.LoC.update(CC.longActive, CS, long_plan.aTarget, long_plan.shouldStop, pid_accel_limits))
 
+    # Gas-override handoff: while the driver presses the accelerator with openpilot
+    # engaged, publish the planner's accel request (feed-forward only, gas side only --
+    # the PID above stays reset so it can't wind up against the driver's foot). The
+    # Honda Nidec carcontroller uses it to keep the PCM speed-servo riding under the
+    # pedal so the takeover on release has no torque gap.
+    if CC.enabled and not CC.longActive and CS.gasPressed and self.CP.openpilotLongitudinalControl:
+      actuators.accel = float(min(max(long_plan.aTarget, 0.0), pid_accel_limits[1]))
+
     # Steering PID loop and lateral MPC
     # Reset desired curvature to current to avoid violating the limits on engage
     if self.sm.valid['lateralManeuverPlan']:
