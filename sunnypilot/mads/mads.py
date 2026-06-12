@@ -152,6 +152,12 @@ class ModularAssistiveDrivingSystem:
     selfdrive_enable_events = self.events.has(EventName.pcmEnable) or self.events.has(EventName.buttonEnable)
     set_speed_btns_enable = any(be.type in SET_SPEED_BUTTONS for be in CS.buttonEvents)
 
+    # belowEngageSpeed gates longitudinal (ACC) engagement (e.g. Honda Nidec minEnableSpeed);
+    # it should not block lateral-only MADS engagement. Lateral low-speed limits are handled
+    # separately via minSteerSpeed/belowSteerSpeed.
+    if not selfdrive_enable_events:
+      self.events.remove(EventName.belowEngageSpeed)
+
     # wrongCarMode alert only or actively block control
     self.get_wrong_car_mode(selfdrive_enable_events or set_speed_btns_enable)
 
