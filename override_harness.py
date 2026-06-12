@@ -112,6 +112,41 @@ def main():
   assert r2[20:, 1].max() == 0.0, "control FAIL: shadow must require enabled"
   print("control (gas pressed, not enabled): pcm_speed stays 0  OK")
 
+  # RELEASE RACE (route 35 ep2, 2026-06-11): carState gasPressed falls one cycle before
+  # controlsd's longActive comes back. In the stale frames neither longActive nor the
+  # plain gas_override condition holds; without the linger the controller resets its
+  # pcm_off slew state every release and, if the 10Hz ACC_HUD tick lands inside the
+  # window, puts PCM_SPEED=0 on the wire (servo dump -> ~3s rebuild -> -0.65 sag).
+  ci3 = mk_interface()
+  r3 = run_seq(ci3, [
+    (200, True, True, 0.5, False),   # 0: normal long active
+    (300, True, False, 0.4, True),   # 1: gas override (settles ~vEgo+3.6)
+    (5,   True, False, 0.4, False),  # 2: STALE window -- gas up, longActive not yet back
+    (200, True, True, 0.5, False),   # 3: handback
+  ])
+  stale = r3[r3[:, 0] == 2]
+  post = r3[r3[:, 0] == 3]
+  print(f"race: stale-window pcm_speed min {stale[:, 1].min():6.2f} | "
+        f"post-handback first 0.5s min {post[:50, 1].min():6.2f}")
+  assert stale[:, 1].min() > 17.0, "race FAIL: PCM_SPEED zeroed/dropped in the stale release window"
+  assert post[:50, 1].min() > 17.0, "race FAIL: slew state was reset at release (re-ramp from vEgo)"
+  # brake released mid-linger must clear it immediately
+  ci4 = mk_interface()
+  ctrl4 = ci4.CC
+  r4 = run_seq(ci4, [
+    (200, True, True, 0.5, False),
+    (300, True, False, 0.4, True),
+  ])
+  cs_brake = structs.CarState()
+  cs_brake.vEgo = 15.0
+  cs_brake.gasPressed = False
+  cs_brake.brakePressed = True
+  cs_brake.cruiseState = structs.CarState.CruiseState()
+  ci4.CS.out = cs_brake
+  ctrl4.update(mk_cc(False, False, 0.0).as_reader() if hasattr(structs.CarControl(), 'as_reader') else mk_cc(False, False, 0.0), mk_ccsp(), ci4.CS, 0)
+  assert ctrl4.gas_override_linger == 0, "race FAIL: brake/disengage must clear the linger"
+  print("race: linger cleared on brake/disengage  OK")
+
   print("\nALL CHECKS PASSED")
 
 
