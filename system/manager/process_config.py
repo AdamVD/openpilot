@@ -189,6 +189,9 @@ if os.path.exists("./github_runner.sh"):
 if os.path.exists("../../sunnypilot/sunnylink/uploader.py"):
   procs += [PythonProcess("sunnylink_uploader", "sunnypilot.sunnylink.uploader", use_sunnylink_uploader_shim)]
 
+if os.path.exists("../../sunnypilot/s3_uploader/uploader.py"):
+  procs += [PythonProcess("s3_uploader", "sunnypilot.s3_uploader.uploader", only_offroad)]
+
 if os.path.exists("../../third_party/copyparty/copyparty-sfx.py"):
   sunnypilot_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
   copyparty_args = [f"-v{Paths.crash_log_root()}:/swaglogs:r"]
