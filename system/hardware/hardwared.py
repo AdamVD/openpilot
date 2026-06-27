@@ -47,8 +47,11 @@ THERMAL_BANDS = OrderedDict({
   ThermalStatus.danger: ThermalBand(94.0, None),
 })
 
-# Override to highest thermal band when offroad and above this temp
-OFFROAD_DANGER_TEMP = 75
+# Override to highest thermal band when offroad and above this temp.
+# comma four (reports as "mici") tolerates a higher parked heat-soak before
+# blocking engagement; raised 75->85 per upstream #37891 to avoid summer
+# sun-soak lockouts that would clear once the car is moving.
+OFFROAD_DANGER_TEMP = 85 if HARDWARE.get_device_type() == "mici" else 75
 
 prev_offroad_states: dict[str, tuple[bool, str | None]] = {}
 
