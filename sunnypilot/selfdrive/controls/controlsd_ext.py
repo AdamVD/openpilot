@@ -17,6 +17,7 @@ from openpilot.sunnypilot.livedelay.helpers import get_lat_delay
 from openpilot.sunnypilot.modeld_v2.modeld_base import ModelStateBase
 from openpilot.sunnypilot.selfdrive.controls.lib.blinker_pause_lateral import BlinkerPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.curve_exit_pause_lateral import CurveExitPauseLateral
+from openpilot.sunnypilot.selfdrive.controls.lib.sharp_turn_pause_lateral import SharpTurnPauseLateral
 from openpilot.sunnypilot.selfdrive.controls.lib.latcontrol_torque_v0 import LatControlTorque as LatControlTorqueV0
 
 
@@ -28,6 +29,7 @@ class ControlsExt(ModelStateBase):
     self._param_update_time: float = 0.0
     self.blinker_pause_lateral = BlinkerPauseLateral()
     self.curve_exit_pause_lateral = CurveExitPauseLateral()
+    self.sharp_turn_pause_lateral = SharpTurnPauseLateral()
 
     cloudlog.info("controlsd_ext is waiting for CarParamsSP")
     self.CP_SP = messaging.log_from_bytes(params.get("CarParamsSP", block=True), custom.CarParamsSP)
@@ -53,6 +55,7 @@ class ControlsExt(ModelStateBase):
     if time.monotonic() - self._param_update_time > PARAMS_UPDATE_PERIOD:
       self.blinker_pause_lateral.get_params()
       self.curve_exit_pause_lateral.get_params()
+      self.sharp_turn_pause_lateral.get_params()
 
       if self.CP.lateralTuning.which() == 'torque':
         self.lat_delay = get_lat_delay(self.params, sm["liveDelay"].lateralDelay)
@@ -64,6 +67,9 @@ class ControlsExt(ModelStateBase):
       return False
 
     if self.curve_exit_pause_lateral.update(sm['carState'], sm['liveParameters'].angleOffsetDeg, sm.logMonoTime['carState']):
+      return False
+
+    if self.sharp_turn_pause_lateral.update(sm['carState'], sm.logMonoTime['carState']):
       return False
 
     ss_sp = sm['selfdriveStateSP']

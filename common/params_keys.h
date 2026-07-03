@@ -152,6 +152,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"BlinkerMinLateralControlSpeed", {PERSISTENT | BACKUP, INT, "20"}},  // MPH or km/h
     {"BlinkerPauseLateralControl", {PERSISTENT | BACKUP, INT, "0"}},
     {"CurveExitPauseLateralControl", {PERSISTENT | BACKUP, INT, "1"}},  // pause lateral while driver straightens out of a sharp curve (EPS resists assisted unwinds)
+    {"SharpTurnPauseLateralControl", {PERSISTENT | BACKUP, INT, "1"}},  // pause lateral during sharp low-speed hand-steered maneuvers (parking lots; beyond LKAS torque authority)
     {"SteerSaturatedMinSpeed", {PERSISTENT | BACKUP, INT, "50"}},  // MPH or km/h; below this the "Take Control" steer-saturation nag is suppressed
     {"Brightness", {PERSISTENT | BACKUP, INT, "0"}},
     {"CarList", {PERSISTENT, JSON}},
