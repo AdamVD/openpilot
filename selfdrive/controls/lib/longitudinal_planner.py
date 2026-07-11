@@ -25,6 +25,31 @@ from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import Lon
 # pressure + rail-unwind overshoot. Honest plans also calm the follow loop.
 A_CRUISE_MAX_VALS = [1.6, 1.0, 0.65, 0.5]
 A_CRUISE_MAX_BP = [0., 10.0, 25., 40.]
+
+# 2026-07-11: opening-gap chase governor ("lazy re-close", FINDINGS_follow_policy_2026-07-09.md rev 7/10).
+# Factory follow is ASYMMETRIC: it barely chases an opening gap (+0.016 m/s^2 per m/s of vRel vs our
+# plan's +0.064; opening-cell p90 envelope 0.31-0.41 m/s^2) and re-closes lazily, responding firmly only
+# when CLOSING. Our symmetric MPC chases both ways -> chase -> overshoot -> re-brake limit cycle: realized
+# surges 71.9/hr vs factory 33.5, 65% re-braked within 8s vs 38%. Fix: while a tracked lead is pulling
+# AWAY at follow range, cap the DELIVERED accel (aTarget only -- the published plan trajectory stays
+# uncapped so shadow/counterfactual analysis keeps seeing the raw ask) at the factory envelope. Closing
+# side, cut-ins (closing by definition), lead-brake, and no-lead cruise keep full authority: the cap
+# binds positive accel only and never engages without an opening gap. Passing Assist hands authority
+# back instantly (explicit driver intent). Secondary win (FINDINGS_sustained_hold_overshoot_2026-07-10.md):
+# a 0.35-capped ask feed-forwards pcm_off ~2.7 marginal-at-the-knee instead of 2.5-3.6 across it, so the
+# mid-hold TCU kickdown that turns "0.3 held for 6s" into 0.6-0.8 mostly never fires. Highway-fitted:
+# inert below 12 m/s (<18 m/s follow is 3-4 min per era in the corpus -- city regime unsampled), full
+# factory cap from 18 m/s. PCM gas authority only exists above ~9.6 m/s anyway.
+CHASE_GOVERNOR = True         # False = exact prior behavior
+CHASE_A_CAP_BP = [12., 18.]   # m/s; ramp from barely-binding to the factory envelope
+CHASE_A_CAP_V = [0.75, 0.35]  # m/s^2; 0.35 = factory opening-cell p90 envelope
+CHASE_THW_ON = 2.2            # s; engage only at genuine follow range
+CHASE_THW_OFF = 2.5           # s; THW release hysteresis
+CHASE_VREL_ON = 0.3           # m/s; engage: gap opening (vRel > 0 = lead faster)
+CHASE_VREL_OFF = 0.0          # m/s; hold until the gap stops opening
+CHASE_RELEASE_T = 1.0         # s; linger after conditions drop (incl. lead departure -- no step resume)
+CHASE_RELEASE_RATE = 0.5      # m/s^2 per s; cap ramps back to inert after the linger
+CHASE_CAP_INERT = max(A_CRUISE_MAX_VALS)
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -67,6 +92,11 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.prev_accel_clip = [ACCEL_MIN, ACCEL_MAX]
     self.output_a_target = 0.0
     self.output_should_stop = False
+
+    # opening-gap chase governor state (constants above)
+    self.chase_active = False
+    self.chase_release = 0.0
+    self.chase_cap = CHASE_CAP_INERT
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -192,6 +222,34 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     else:
       output_a_target = output_a_target_mpc
       self.output_should_stop = output_should_stop_mpc
+
+    # Opening-gap chase governor: cap delivered accel at the factory re-close envelope while a
+    # tracked lead pulls away at follow range (see the CHASE_* block above). Latch engages on
+    # THW<ON & vRel>ON, holds while THW<OFF & vRel>OFF, then lingers RELEASE_T and ramps the cap
+    # out at RELEASE_RATE -- no step on release or lead departure. Cap-only: decel unaffected.
+    if CHASE_GOVERNOR:
+      lead = sm['radarState'].leadOne
+      thw = lead.dRel / max(v_ego, 0.1)
+      in_range = bool(lead.status) and v_ego > CHASE_A_CAP_BP[0]
+      if self.pla.accel_headroom > 0.0:
+        # driver signaled a pass: hand full authority back immediately
+        self.chase_active = False
+        self.chase_release = 0.0
+        self.chase_cap = CHASE_CAP_INERT
+      elif in_range and thw < CHASE_THW_ON and lead.vRel > CHASE_VREL_ON:
+        self.chase_active = True
+        self.chase_release = CHASE_RELEASE_T
+      elif self.chase_active:
+        if in_range and thw < CHASE_THW_OFF and lead.vRel > CHASE_VREL_OFF:
+          self.chase_release = CHASE_RELEASE_T  # gap still opening at follow range: hold the cap
+        else:
+          self.chase_release -= self.dt
+          self.chase_active = self.chase_release > 0.0
+      if self.chase_active:
+        self.chase_cap = float(np.interp(v_ego, CHASE_A_CAP_BP, CHASE_A_CAP_V))
+      else:
+        self.chase_cap = min(self.chase_cap + CHASE_RELEASE_RATE * self.dt, CHASE_CAP_INERT)
+      output_a_target = min(output_a_target, self.chase_cap)
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
