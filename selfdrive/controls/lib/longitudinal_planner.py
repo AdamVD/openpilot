@@ -228,27 +228,35 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     # THW<ON & vRel>ON, holds while THW<OFF & vRel>OFF, then lingers RELEASE_T and ramps the cap
     # out at RELEASE_RATE -- no step on release or lead departure. Cap-only: decel unaffected.
     if CHASE_GOVERNOR:
-      lead = sm['radarState'].leadOne
-      thw = lead.dRel / max(v_ego, 0.1)
-      in_range = bool(lead.status) and v_ego > CHASE_A_CAP_BP[0]
-      if self.pla.accel_headroom > 0.0:
-        # driver signaled a pass: hand full authority back immediately
+      if reset_state:
+        # long control off / cruise uninitialized (review 7/11): drop the latch entirely so a
+        # pre-disengagement cap can never linger into a resume -- the latch re-engages from live
+        # conditions on the first active frame if the gap is still opening.
         self.chase_active = False
         self.chase_release = 0.0
         self.chase_cap = CHASE_CAP_INERT
-      elif in_range and thw < CHASE_THW_ON and lead.vRel > CHASE_VREL_ON:
-        self.chase_active = True
-        self.chase_release = CHASE_RELEASE_T
-      elif self.chase_active:
-        if in_range and thw < CHASE_THW_OFF and lead.vRel > CHASE_VREL_OFF:
-          self.chase_release = CHASE_RELEASE_T  # gap still opening at follow range: hold the cap
-        else:
-          self.chase_release -= self.dt
-          self.chase_active = self.chase_release > 0.0
-      if self.chase_active:
-        self.chase_cap = float(np.interp(v_ego, CHASE_A_CAP_BP, CHASE_A_CAP_V))
       else:
-        self.chase_cap = min(self.chase_cap + CHASE_RELEASE_RATE * self.dt, CHASE_CAP_INERT)
+        lead = sm['radarState'].leadOne
+        thw = lead.dRel / max(v_ego, 0.1)
+        in_range = bool(lead.status) and v_ego > CHASE_A_CAP_BP[0]
+        if self.pla.accel_headroom > 0.0:
+          # driver signaled a pass: hand full authority back immediately
+          self.chase_active = False
+          self.chase_release = 0.0
+          self.chase_cap = CHASE_CAP_INERT
+        elif in_range and thw < CHASE_THW_ON and lead.vRel > CHASE_VREL_ON:
+          self.chase_active = True
+          self.chase_release = CHASE_RELEASE_T
+        elif self.chase_active:
+          if in_range and thw < CHASE_THW_OFF and lead.vRel > CHASE_VREL_OFF:
+            self.chase_release = CHASE_RELEASE_T  # gap still opening at follow range: hold the cap
+          else:
+            self.chase_release -= self.dt
+            self.chase_active = self.chase_release > 0.0
+        if self.chase_active:
+          self.chase_cap = float(np.interp(v_ego, CHASE_A_CAP_BP, CHASE_A_CAP_V))
+        else:
+          self.chase_cap = min(self.chase_cap + CHASE_RELEASE_RATE * self.dt, CHASE_CAP_INERT)
       output_a_target = min(output_a_target, self.chase_cap)
 
     for idx in range(2):
