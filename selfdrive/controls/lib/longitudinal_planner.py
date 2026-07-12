@@ -129,6 +129,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     # descent-mode tolerance latch state (constants above)
     self.descent_active = False
+    self.descent_bte = False  # band-top exited: re-entry only below BAND_REARM (sawtooth bound)
     self.descent_pitch_lp = 0.0
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
@@ -312,11 +313,24 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     if DESCENT_MODE:
       if reset_state or force_slow_decel or self.mpc.source != LongitudinalPlanSource.cruise:
         self.descent_active = False
+        self.descent_bte = False
       else:
         v_err = v_ego - v_cruise
         pitch_ok = self.descent_pitch_lp < (DESCENT_PITCH_OFF if self.descent_active else DESCENT_PITCH_ON)
-        band_hi = DESCENT_BAND_TOP if self.descent_active else DESCENT_BAND_REARM
-        self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and DESCENT_BAND_LOW < v_err < band_hi
+        if self.descent_active:
+          band_ok = DESCENT_BAND_LOW < v_err < DESCENT_BAND_TOP
+          if not band_ok and v_err >= DESCENT_BAND_TOP:
+            self.descent_bte = True  # band-top exit: friction trims; re-arm only below REARM
+          self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and band_ok
+        else:
+          # First entry anywhere in the band: today's steep-descent friction equilibrium sits
+          # ~+2 kph over set (knee under-delivery), between REARM and TOP -- an entry ceiling
+          # at REARM could never engage there (descent_check.py, 370/975 frames). REARM only
+          # bounds the post-band-top trim sawtooth.
+          if self.descent_bte and v_err < DESCENT_BAND_REARM:
+            self.descent_bte = False
+          band_hi = DESCENT_BAND_REARM if self.descent_bte else DESCENT_BAND_TOP
+          self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and DESCENT_BAND_LOW < v_err < band_hi
       if self.descent_active:
         output_a_target = max(output_a_target, DESCENT_A_FLOOR)
 
