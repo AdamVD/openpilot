@@ -18,6 +18,17 @@ from openpilot.common.swaglog import cloudlog
 
 from openpilot.sunnypilot.selfdrive.controls.lib.longitudinal_planner import LongitudinalPlannerSP
 
+# Descent-mode latch geometry: single source of truth is the opendbc Honda carcontroller params
+# (this fork is Odyssey-only; the paired latches desync silently if these ever diverge).
+from opendbc.car.honda.values import CarControllerParams as _HONDA_CCP
+DESCENT_PITCH_ON = _HONDA_CCP.NIDEC_DESCENT_PITCH_ON
+DESCENT_PITCH_OFF = _HONDA_CCP.NIDEC_DESCENT_PITCH_OFF
+DESCENT_PITCH_TAU = _HONDA_CCP.NIDEC_DESCENT_PITCH_TAU
+DESCENT_V_MIN = _HONDA_CCP.NIDEC_DESCENT_V_MIN
+DESCENT_BAND_TOP = _HONDA_CCP.NIDEC_DESCENT_BAND_TOP
+DESCENT_BAND_REARM = _HONDA_CCP.NIDEC_DESCENT_BAND_REARM
+DESCENT_BAND_LOW = _HONDA_CCP.NIDEC_DESCENT_BAND_LOW
+
 # 2026-06-09: trimmed toward the MEASURED Odyssey NIDEC deliverable (rail tests, drive 00000027:
 # settled aego ~0.65-0.70 @ 14-17 m/s, ~0.45-0.65 @ 24-31 m/s with pcm_off railed at 8; the
 # pcm_off->aego curve is flat from ~3 to 8, so the PCM's internal accel schedule is the ceiling).
@@ -60,25 +71,31 @@ CHASE_CAP_INERT = max(A_CRUISE_MAX_VALS)
 CHASE_CATCHUP_THW_ON = 4.0    # s; engage the catch-up cap out to here (incident onset was THW 3.77)
 CHASE_CATCHUP_THW_OFF = 4.4   # s; release hysteresis
 
-# 2026-07-11: descent-mode tolerance floor (SPEC_descent_mode_2026-07-11.md; pairs with the
-# opendbc carcontroller NIDEC_DESCENT_* anchor -- no new wire signal, the layers couple through
-# the resulting mild a_des). Stock ACC engine-brakes grade descents via the PCM servo + TCU
-# downshift and ~never friction-brakes for grade (FINDINGS_stock_grade_behavior_2026-07-06:
-# 43 windows, -5.6% @110kph held friction-free). The carcontroller can only present the PCM
-# the stock signal (growing overspeed error) if the planner stops demanding the decel stock
-# deliberately doesn't perform: while descending at/just-over set with the plan CRUISE-bound
-# (not lead/e2e), floor aTarget at -0.1 so longControl neither friction-serves the band nor
-# winds its integrator against the suppressed cover. Floor-only: positive asks, the published
-# trajectory (shadow-eval instrument), lead/e2e-bound plans, and forceDecel are untouched.
+# 2026-07-11 (design rev 2 after the 10-angle review, 7/12): descent-mode tolerance floor
+# (SPEC_descent_mode_2026-07-11.md; pairs with the opendbc carcontroller NIDEC_DESCENT_* anchor
+# -- no new wire signal, the layers couple through the resulting mild actuators.accel). Stock
+# ACC engine-brakes grade descents via the PCM servo + TCU downshift and ~never friction-brakes
+# for grade (FINDINGS_stock_grade_behavior_2026-07-06: 43 windows, -5.6% @110kph friction-free).
+# The carcontroller can only present the PCM the stock signal (growing overspeed error) if the
+# planner stops demanding the decel stock deliberately doesn't perform. The floor TRACKS THE
+# DELIVERED ACCEL (max(output, clip(aEgo, 0, 0.5))), not a constant: "tolerate" = "target what
+# is happening", so longControl's error ~ 0 by construction -- no integrator windup while the
+# band drifts (review 7/12: a constant -0.1 floor left error = -aEgo, winding i at ~0.05/s and
+# dragging actuators.accel through the carcontroller's release gate = friction-pulse limit
+# cycle at exactly the target grades; the tracking floor kills the whole family and makes any
+# real deviation of actuators.accel a trustworthy demand signal downstream). Floor-only:
+# positive asks, the published trajectory (shadow-eval instrument), lead/e2e-bound plans,
+# forceDecel, and stock-long mode (openpilotLongitudinalControl gate) are untouched. A raw ask
+# below RELEASE_ADES unlatches instantly regardless of source -- covers the MPC pre-braking a
+# lead the t=0 source attribution hasn't flipped to yet (review 7/12), e2e, and SCC/SLA demands.
+# Band-top exits ramp the floor out at RELEASE_RATE (reuses the bte flag) so the designed
+# friction trim doesn't step; all safety releases stay same-frame.
 DESCENT_MODE = True           # False = exact prior behavior
-DESCENT_A_FLOOR = -0.1        # m/s^2 tolerance floor while latched
-DESCENT_PITCH_ON = -0.012     # rad (~-1.2% grade); latch-enter (LP-filtered pitch)
-DESCENT_PITCH_OFF = -0.008    # rad; latch-exit (hysteresis)
-DESCENT_PITCH_TAU = 1.0       # s; LP on pitch for the latch only
-DESCENT_V_MIN = 12.0          # m/s; above the 21.5 mph PCM cancel floor / validated regime
-DESCENT_BAND_TOP = 0.83       # m/s (+3 kph over v_cruise); band exit -> normal decel/friction trims
-DESCENT_BAND_REARM = 0.42     # m/s (+1.5 kph); re-enter only below (bounds the trim sawtooth)
-DESCENT_BAND_LOW = -0.5       # m/s; low-side exit (grade eased -> normal gas serving resumes)
+DESCENT_FLOOR_MAX = 0.5       # m/s^2 ceiling on the aEgo-tracking floor (sanity clip)
+DESCENT_RELEASE_ADES = -0.35  # m/s^2 raw pre-floor ask below this -> instant unlatch (real demand)
+DESCENT_RELEASE_RATE = 0.5    # m/s^2 per s; floor ramp-out after a band-top exit (trim shaping)
+# Latch geometry (pitch/v/band) is single-sourced from the opendbc carcontroller constants
+# below the import block -- the two latches MUST agree (SPEC; review 7/12 desync finding).
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -131,6 +148,7 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.descent_active = False
     self.descent_bte = False  # band-top exited: re-entry only below BAND_REARM (sawtooth bound)
     self.descent_pitch_lp = 0.0
+    self.descent_floor = ACCEL_MIN  # inert; tracks clip(aEgo, 0, FLOOR_MAX) while latched
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -302,37 +320,43 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     # Descent-mode tolerance floor (DESCENT_* above): tolerate the overspeed band on descents
     # instead of friction-serving it; the carcontroller anchor presents the PCM the growing
-    # error that fires its own TCU engine-brake downshift. Latch releases same-frame on source
-    # flip (lead/e2e binding), forceDecel, or reset; band uses the post-SCC/SLA v_cruise so
-    # curve/limit slowdowns break it naturally.
-    if len(sm['carControl'].orientationNED) == 3:
-      descent_raw_pitch = sm['carControl'].orientationNED[1]
-    else:
-      descent_raw_pitch = 0.0
-    self.descent_pitch_lp += (self.dt / DESCENT_PITCH_TAU) * (descent_raw_pitch - self.descent_pitch_lp)
-    if DESCENT_MODE:
-      if reset_state or force_slow_decel or self.mpc.source != LongitudinalPlanSource.cruise:
+    # error that fires its own TCU engine-brake downshift. Same-frame releases: reset,
+    # forceDecel, source flip (lead/e2e binding), or ANY raw ask below RELEASE_ADES (covers
+    # MPC pre-brake before the t=0 source attribution flips, e2e, SCC/SLA). Band uses the
+    # post-SCC/SLA v_cruise so curve/limit slowdowns break it naturally. First entry is
+    # allowed anywhere in the band (today's steep-descent friction equilibrium sits ~+2 kph
+    # over set, between REARM and TOP -- descent_check.py, 370/975 frames unreachable with an
+    # entry ceiling at REARM); after a band-top exit (bte), re-entry only below REARM and the
+    # floor ramps out at RELEASE_RATE so the designed friction trim doesn't step.
+    if DESCENT_MODE and self.CP.openpilotLongitudinalControl:
+      if len(sm['carControl'].orientationNED) == 3:
+        descent_pitch = sm['carControl'].orientationNED[1]
+      else:
+        descent_pitch = 0.0
+      self.descent_pitch_lp += (self.dt / DESCENT_PITCH_TAU) * (descent_pitch - self.descent_pitch_lp)
+      if reset_state or force_slow_decel or self.mpc.source != LongitudinalPlanSource.cruise or \
+         output_a_target < DESCENT_RELEASE_ADES:
         self.descent_active = False
         self.descent_bte = False
+        self.descent_floor = ACCEL_MIN
       else:
         v_err = v_ego - v_cruise
+        if self.descent_active and v_err >= DESCENT_BAND_TOP:
+          self.descent_bte = True   # band-top exit: friction trims; re-arm only below REARM
+        elif self.descent_bte and v_err < DESCENT_BAND_REARM:
+          self.descent_bte = False
         pitch_ok = self.descent_pitch_lp < (DESCENT_PITCH_OFF if self.descent_active else DESCENT_PITCH_ON)
+        band_hi = DESCENT_BAND_REARM if (not self.descent_active and self.descent_bte) else DESCENT_BAND_TOP
+        self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and DESCENT_BAND_LOW < v_err < band_hi
         if self.descent_active:
-          band_ok = DESCENT_BAND_LOW < v_err < DESCENT_BAND_TOP
-          if not band_ok and v_err >= DESCENT_BAND_TOP:
-            self.descent_bte = True  # band-top exit: friction trims; re-arm only below REARM
-          self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and band_ok
+          # Track the DELIVERED accel (>=0): longControl targets what is happening, error ~ 0,
+          # no windup; the trajectory/plan stay untouched (shadow-eval instrument intact).
+          self.descent_floor = float(np.clip(sm['carState'].aEgo, 0.0, DESCENT_FLOOR_MAX))
+        elif self.descent_bte:
+          self.descent_floor -= DESCENT_RELEASE_RATE * self.dt  # shaped hand-off to the trim
         else:
-          # First entry anywhere in the band: today's steep-descent friction equilibrium sits
-          # ~+2 kph over set (knee under-delivery), between REARM and TOP -- an entry ceiling
-          # at REARM could never engage there (descent_check.py, 370/975 frames). REARM only
-          # bounds the post-band-top trim sawtooth.
-          if self.descent_bte and v_err < DESCENT_BAND_REARM:
-            self.descent_bte = False
-          band_hi = DESCENT_BAND_REARM if self.descent_bte else DESCENT_BAND_TOP
-          self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and DESCENT_BAND_LOW < v_err < band_hi
-      if self.descent_active:
-        output_a_target = max(output_a_target, DESCENT_A_FLOOR)
+          self.descent_floor = ACCEL_MIN
+      output_a_target = max(output_a_target, self.descent_floor)
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
