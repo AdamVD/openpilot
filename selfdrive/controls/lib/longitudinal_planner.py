@@ -28,6 +28,7 @@ DESCENT_V_MIN = _HONDA_CCP.NIDEC_DESCENT_V_MIN
 DESCENT_BAND_TOP = _HONDA_CCP.NIDEC_DESCENT_BAND_TOP
 DESCENT_BAND_REARM = _HONDA_CCP.NIDEC_DESCENT_BAND_REARM
 DESCENT_BAND_LOW = _HONDA_CCP.NIDEC_DESCENT_BAND_LOW
+DESCENT_REARM_T = _HONDA_CCP.NIDEC_DESCENT_REARM_T
 
 # 2026-06-09: trimmed toward the MEASURED Odyssey NIDEC deliverable (rail tests, drive 00000027:
 # settled aego ~0.65-0.70 @ 14-17 m/s, ~0.45-0.65 @ 24-31 m/s with pcm_off railed at 8; the
@@ -91,7 +92,15 @@ CHASE_CATCHUP_THW_OFF = 4.4   # s; release hysteresis
 # Band-top exits ramp the floor out at RELEASE_RATE (reuses the bte flag) so the designed
 # friction trim doesn't step; all safety releases stay same-frame.
 DESCENT_MODE = True           # False = exact prior behavior
-DESCENT_FLOOR_MAX = 0.5       # m/s^2 ceiling on the aEgo-tracking floor (sanity clip)
+DESCENT_FLOOR_MAX = 0.0       # m/s^2 ceiling on the floor. rev 3 (first drive 7/12): 0.5 let the
+                              # floor TARGET the gravity surge (aTarget = +aEgo on descent onsets,
+                              # observed +0.20/+0.32) -> FF pushed pcm_off POSITIVE (+2.2) = active
+                              # throttle downhill over set, crests driven to +1.2 m/s over. POSITIVE
+                              # FEEDBACK: rev 1 (constant -0.1) wound up, rev 2 (track aEgo) pushed.
+                              # At 0.0 "tolerate" = "don't demand decel": equilibrium error is 0 (aEgo
+                              # ~0 once balanced -> no rev-1 windup), crest transients wind i by <~0.05
+                              # (harmless), and the floor can never add throttle. Raising this restores
+                              # aEgo-tracking for A/B.
 DESCENT_RELEASE_ADES = -0.35  # m/s^2 raw pre-floor ask below this -> instant unlatch (real demand)
 DESCENT_RELEASE_RATE = 0.5    # m/s^2 per s; floor ramp-out after a band-top exit (trim shaping)
 # Latch geometry (pitch/v/band) is single-sourced from the opendbc carcontroller constants
@@ -146,7 +155,8 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
 
     # descent-mode tolerance latch state (constants above)
     self.descent_active = False
-    self.descent_bte = False  # band-top exited: re-entry only below BAND_REARM (sawtooth bound)
+    self.descent_bte = False   # band-top exited: re-entry below BAND_REARM or after REARM_T cooldown
+    self.descent_bte_t = 0.0   # seconds since band-top exit (drives the REARM_T cooldown, rev 3)
     self.descent_pitch_lp = 0.0
     self.descent_floor = ACCEL_MIN  # inert; tracks clip(aEgo, 0, FLOOR_MAX) while latched
 
@@ -342,15 +352,22 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       else:
         v_err = v_ego - v_cruise
         if self.descent_active and v_err >= DESCENT_BAND_TOP:
-          self.descent_bte = True   # band-top exit: friction trims; re-arm only below REARM
-        elif self.descent_bte and v_err < DESCENT_BAND_REARM:
-          self.descent_bte = False
+          self.descent_bte = True   # band-top exit: friction trims; re-arm below REARM or on cooldown
+          self.descent_bte_t = 0.0
+        elif self.descent_bte:
+          # rev 3 (first drive 7/12): the trim equilibrium sits ABOVE the REARM line on steep grades,
+          # so geometry-only re-arm locked the latch out for the rest of the hill (a8: 17.8 s of
+          # friction after one set-tap excursion). Time-bound the sawtooth: instant re-arm when the
+          # grade eases (below REARM) OR after REARM_T seconds. Mirrors the carcontroller latch.
+          self.descent_bte_t += self.dt
+          if v_err < DESCENT_BAND_REARM or self.descent_bte_t >= DESCENT_REARM_T:
+            self.descent_bte = False
         pitch_ok = self.descent_pitch_lp < (DESCENT_PITCH_OFF if self.descent_active else DESCENT_PITCH_ON)
         band_hi = DESCENT_BAND_REARM if (not self.descent_active and self.descent_bte) else DESCENT_BAND_TOP
         self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and DESCENT_BAND_LOW < v_err < band_hi
         if self.descent_active:
-          # Track the DELIVERED accel (>=0): longControl targets what is happening, error ~ 0,
-          # no windup; the trajectory/plan stay untouched (shadow-eval instrument intact).
+          # Floor at 0.0 (rev 3): "tolerate" = "don't demand decel", never "chase the surge" -- see
+          # DESCENT_FLOOR_MAX. The clip keeps aEgo-tracking restorable by raising FLOOR_MAX for A/B.
           self.descent_floor = float(np.clip(sm['carState'].aEgo, 0.0, DESCENT_FLOOR_MAX))
         elif self.descent_bte:
           self.descent_floor -= DESCENT_RELEASE_RATE * self.dt  # shaped hand-off to the trim
