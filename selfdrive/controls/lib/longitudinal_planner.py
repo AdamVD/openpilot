@@ -50,6 +50,15 @@ CHASE_VREL_OFF = 0.0          # m/s; hold until the gap stops opening
 CHASE_RELEASE_T = 1.0         # s; linger after conditions drop (incl. lead departure -- no step resume)
 CHASE_RELEASE_RATE = 0.5      # m/s^2 per s; cap ramps back to inert after the linger
 CHASE_CAP_INERT = max(A_CRUISE_MAX_VALS)
+# Catch-up envelope (2026-07-11 first drive, FINDINGS_gov_first_drive): the opening-only scope let
+# the felt incident straight through -- a 75m/THW 3.8 catch-up drew a 0.6-0.77 ask for 10s (never
+# engageable: far-gap AND closing) and ended in a cb-73 friction brake. Factory in those cells
+# (THW 2.0-4.5, vRel<=0.3, stock corpus v>15): p50 ~0.00, p90 +0.07..+0.36 -- it lets the existing
+# closing rate do the work. Second latch branch: lead tracked & NOT opening & THW under this ->
+# same speed-ramped cap. Lead pulling away at far gap (vRel>0.3, THW>=THW_ON) still releases to
+# full cruise authority, as do no-lead cruise, cut-in decel, and Passing Assist.
+CHASE_CATCHUP_THW_ON = 4.0    # s; engage the catch-up cap out to here (incident onset was THW 3.77)
+CHASE_CATCHUP_THW_OFF = 4.4   # s; release hysteresis
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -247,9 +256,16 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         elif in_range and thw < CHASE_THW_ON and lead.vRel > CHASE_VREL_ON:
           self.chase_active = True
           self.chase_release = CHASE_RELEASE_T
+        elif in_range and thw < CHASE_CATCHUP_THW_ON and lead.vRel <= CHASE_VREL_ON:
+          # catch-up/approach branch (7/11): lead within envelope and NOT opening -- includes the
+          # long-range catch-up the opening-only scope missed. Only vRel>VREL_ON at THW>=THW_ON
+          # (lead pulling away beyond follow range) stays uncapped -> full cruise authority.
+          self.chase_active = True
+          self.chase_release = CHASE_RELEASE_T
         elif self.chase_active:
-          if in_range and thw < CHASE_THW_OFF and lead.vRel > CHASE_VREL_OFF:
-            self.chase_release = CHASE_RELEASE_T  # gap still opening at follow range: hold the cap
+          if in_range and ((thw < CHASE_THW_OFF and lead.vRel > CHASE_VREL_OFF) or
+                           (thw < CHASE_CATCHUP_THW_OFF and lead.vRel <= CHASE_VREL_ON)):
+            self.chase_release = CHASE_RELEASE_T  # still opening at follow range, or still catching up
           else:
             self.chase_release -= self.dt
             self.chase_active = self.chase_release > 0.0
