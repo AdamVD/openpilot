@@ -59,6 +59,26 @@ CHASE_CAP_INERT = max(A_CRUISE_MAX_VALS)
 # full cruise authority, as do no-lead cruise, cut-in decel, and Passing Assist.
 CHASE_CATCHUP_THW_ON = 4.0    # s; engage the catch-up cap out to here (incident onset was THW 3.77)
 CHASE_CATCHUP_THW_OFF = 4.4   # s; release hysteresis
+
+# 2026-07-11: descent-mode tolerance floor (SPEC_descent_mode_2026-07-11.md; pairs with the
+# opendbc carcontroller NIDEC_DESCENT_* anchor -- no new wire signal, the layers couple through
+# the resulting mild a_des). Stock ACC engine-brakes grade descents via the PCM servo + TCU
+# downshift and ~never friction-brakes for grade (FINDINGS_stock_grade_behavior_2026-07-06:
+# 43 windows, -5.6% @110kph held friction-free). The carcontroller can only present the PCM
+# the stock signal (growing overspeed error) if the planner stops demanding the decel stock
+# deliberately doesn't perform: while descending at/just-over set with the plan CRUISE-bound
+# (not lead/e2e), floor aTarget at -0.1 so longControl neither friction-serves the band nor
+# winds its integrator against the suppressed cover. Floor-only: positive asks, the published
+# trajectory (shadow-eval instrument), lead/e2e-bound plans, and forceDecel are untouched.
+DESCENT_MODE = True           # False = exact prior behavior
+DESCENT_A_FLOOR = -0.1        # m/s^2 tolerance floor while latched
+DESCENT_PITCH_ON = -0.012     # rad (~-1.2% grade); latch-enter (LP-filtered pitch)
+DESCENT_PITCH_OFF = -0.008    # rad; latch-exit (hysteresis)
+DESCENT_PITCH_TAU = 1.0       # s; LP on pitch for the latch only
+DESCENT_V_MIN = 12.0          # m/s; above the 21.5 mph PCM cancel floor / validated regime
+DESCENT_BAND_TOP = 0.83       # m/s (+3 kph over v_cruise); band exit -> normal decel/friction trims
+DESCENT_BAND_REARM = 0.42     # m/s (+1.5 kph); re-enter only below (bounds the trim sawtooth)
+DESCENT_BAND_LOW = -0.5       # m/s; low-side exit (grade eased -> normal gas serving resumes)
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 ALLOW_THROTTLE_THRESHOLD = 0.4
 MIN_ALLOW_THROTTLE_SPEED = 2.5
@@ -106,6 +126,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.chase_active = False
     self.chase_release = 0.0
     self.chase_cap = CHASE_CAP_INERT
+
+    # descent-mode tolerance latch state (constants above)
+    self.descent_active = False
+    self.descent_pitch_lp = 0.0
 
     self.v_desired_trajectory = np.zeros(CONTROL_N)
     self.a_desired_trajectory = np.zeros(CONTROL_N)
@@ -274,6 +298,27 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         else:
           self.chase_cap = min(self.chase_cap + CHASE_RELEASE_RATE * self.dt, CHASE_CAP_INERT)
       output_a_target = min(output_a_target, self.chase_cap)
+
+    # Descent-mode tolerance floor (DESCENT_* above): tolerate the overspeed band on descents
+    # instead of friction-serving it; the carcontroller anchor presents the PCM the growing
+    # error that fires its own TCU engine-brake downshift. Latch releases same-frame on source
+    # flip (lead/e2e binding), forceDecel, or reset; band uses the post-SCC/SLA v_cruise so
+    # curve/limit slowdowns break it naturally.
+    if len(sm['carControl'].orientationNED) == 3:
+      descent_raw_pitch = sm['carControl'].orientationNED[1]
+    else:
+      descent_raw_pitch = 0.0
+    self.descent_pitch_lp += (self.dt / DESCENT_PITCH_TAU) * (descent_raw_pitch - self.descent_pitch_lp)
+    if DESCENT_MODE:
+      if reset_state or force_slow_decel or self.mpc.source != LongitudinalPlanSource.cruise:
+        self.descent_active = False
+      else:
+        v_err = v_ego - v_cruise
+        pitch_ok = self.descent_pitch_lp < (DESCENT_PITCH_OFF if self.descent_active else DESCENT_PITCH_ON)
+        band_hi = DESCENT_BAND_TOP if self.descent_active else DESCENT_BAND_REARM
+        self.descent_active = pitch_ok and v_ego > DESCENT_V_MIN and DESCENT_BAND_LOW < v_err < band_hi
+      if self.descent_active:
+        output_a_target = max(output_a_target, DESCENT_A_FLOOR)
 
     for idx in range(2):
       accel_clip[idx] = np.clip(accel_clip[idx], self.prev_accel_clip[idx] - 0.05, self.prev_accel_clip[idx] + 0.05)
