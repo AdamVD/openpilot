@@ -72,6 +72,23 @@ CHASE_CAP_INERT = max(A_CRUISE_MAX_VALS)
 CHASE_CATCHUP_THW_ON = 4.0    # s; engage the catch-up cap out to here (incident onset was THW 3.77)
 CHASE_CATCHUP_THW_OFF = 4.4   # s; release hysteresis
 
+# Approach-hold (2026-07-18, FINDINGS_uphill_follow_2026-07-18): never ask POSITIVE accel while
+# actively closing on a lead at follow range. Stock enters the follow mark already decelerating
+# (a at mark crossing: -0.16 median, 34 uphill approaches); we entered at +0.45 because the
+# post-over-lift re-chase (governor-capped 0.35, then PID + grade FF inflated downstream) parked
+# the servo command at the downshift edge exactly as the gap was closing -- the surge then lands
+# 2-5s late (gear transport delay) and re-arms the ~10s uphill limit cycle. Cap-only at 0.0:
+# coasting closes the gap for free (uphill, gravity does it faster); decel demands are untouched;
+# a lead that stops closing (vRel > OFF) or a passing-assist request releases, and the cap ramps
+# back at RELEASE_RATE (no step). Same v/lead validity gates as the chase governor.
+APPROACH_HOLD = True
+APPROACH_THW_ON = 2.5         # s; engage inside genuine follow/approach range
+APPROACH_THW_OFF = 2.8        # s; release hysteresis
+APPROACH_VREL_ON = -0.3       # m/s; engage: meaningfully closing (vRel < 0 = lead slower)
+APPROACH_VREL_OFF = -0.1      # m/s; hold until closing has essentially stopped
+APPROACH_CAP = 0.0            # m/s^2; no positive ask while closing (coast, keep decel authority)
+APPROACH_RELEASE_RATE = 0.5   # m/s^2 per s; cap ramps back to inert on release
+
 # 2026-07-11 (design rev 2 after the 10-angle review, 7/12): descent-mode tolerance floor
 # (SPEC_descent_mode_2026-07-11.md; pairs with the opendbc carcontroller NIDEC_DESCENT_* anchor
 # -- no new wire signal, the layers couple through the resulting mild actuators.accel). Stock
@@ -152,6 +169,10 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
     self.chase_active = False
     self.chase_release = 0.0
     self.chase_cap = CHASE_CAP_INERT
+
+    # approach-hold state (constants above)
+    self.approach_active = False
+    self.approach_cap = CHASE_CAP_INERT
 
     # descent-mode tolerance latch state (constants above)
     self.descent_active = False
@@ -327,6 +348,28 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
         else:
           self.chase_cap = min(self.chase_cap + CHASE_RELEASE_RATE * self.dt, CHASE_CAP_INERT)
       output_a_target = min(output_a_target, self.chase_cap)
+
+    # Approach-hold: no positive ask while actively closing at follow range (APPROACH_* above).
+    # Sits under the chase governor's caps (min-stack); decel demands pass through untouched.
+    if APPROACH_HOLD:
+      if reset_state:
+        self.approach_active = False
+        self.approach_cap = CHASE_CAP_INERT
+      else:
+        lead = sm['radarState'].leadOne
+        thw = lead.dRel / max(v_ego, 0.1)
+        in_range = bool(lead.status) and v_ego > CHASE_A_CAP_BP[0]
+        if self.pla.accel_headroom > 0.0:
+          self.approach_active = False  # driver signaled a pass: full authority back immediately
+        elif in_range and thw < APPROACH_THW_ON and lead.vRel < APPROACH_VREL_ON:
+          self.approach_active = True
+        elif not (in_range and thw < APPROACH_THW_OFF and lead.vRel < APPROACH_VREL_OFF):
+          self.approach_active = False
+        if self.approach_active:
+          self.approach_cap = APPROACH_CAP
+        else:
+          self.approach_cap = min(self.approach_cap + APPROACH_RELEASE_RATE * self.dt, CHASE_CAP_INERT)
+      output_a_target = min(output_a_target, self.approach_cap)
 
     # Descent-mode tolerance floor (DESCENT_* above): tolerate the overspeed band on descents
     # instead of friction-serving it; the carcontroller anchor presents the PCM the growing
