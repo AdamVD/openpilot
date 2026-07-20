@@ -77,16 +77,20 @@ CHASE_CATCHUP_THW_OFF = 4.4   # s; release hysteresis
 # (a at mark crossing: -0.16 median, 34 uphill approaches); we entered at +0.45 because the
 # post-over-lift re-chase (governor-capped 0.35, then PID + grade FF inflated downstream) parked
 # the servo command at the downshift edge exactly as the gap was closing -- the surge then lands
-# 2-5s late (gear transport delay) and re-arms the ~10s uphill limit cycle. Cap-only at 0.0:
-# coasting closes the gap for free (uphill, gravity does it faster); decel demands are untouched;
-# a lead that stops closing (vRel > OFF) or a passing-assist request releases, and the cap ramps
-# back at RELEASE_RATE (no step). Same v/lead validity gates as the chase governor.
+# 2-5s late (gear transport delay) and re-arms the ~10s uphill limit cycle. Cap-only (deeper
+# decel demands are untouched); a lead that stops closing (vRel > OFF) or a passing-assist
+# request releases, and the cap ramps back at RELEASE_RATE (no step). Same v/lead validity gates
+# as the chase governor. 7/19: cap 0.0 -> -0.15 -- "coast closes the gap for free" was true at
+# the plan layer but the wire held speed into the mark (see APPROACH_CAP note).
 APPROACH_HOLD = True
 APPROACH_THW_ON = 2.5         # s; engage inside genuine follow/approach range
 APPROACH_THW_OFF = 2.8        # s; release hysteresis
 APPROACH_VREL_ON = -0.3       # m/s; engage: meaningfully closing (vRel < 0 = lead slower)
 APPROACH_VREL_OFF = -0.1      # m/s; hold until closing has essentially stopped
-APPROACH_CAP = 0.0            # m/s^2; no positive ask while closing (coast, keep decel authority)
+APPROACH_CAP = -0.15          # m/s^2; ease-off while closing, not just coast (7/19 first drive:
+                              # a 0.0 cap let the servo hold speed straight into the mark -- stock
+                              # enters at -0.16 median; pairs with the opendbc honest-friction fix
+                              # that makes a -0.15 ask actually deliverable while lift-guarded)
 APPROACH_RELEASE_RATE = 0.5   # m/s^2 per s; cap ramps back to inert on release
 
 # 2026-07-11 (design rev 2 after the 10-angle review, 7/12): descent-mode tolerance floor
@@ -387,8 +391,12 @@ class LongitudinalPlanner(LongitudinalPlannerSP):
       else:
         descent_pitch = 0.0
       self.descent_pitch_lp += (self.dt / DESCENT_PITCH_TAU) * (descent_pitch - self.descent_pitch_lp)
+      # approach_active releases too (7/19): the approach-hold cap (-0.15) sits ABOVE
+      # RELEASE_ADES (-0.35), so without this clause the descent floor (max ..., 0.0) would
+      # override the ease-off exactly while closing on a lead at follow range -- tolerating
+      # overspeed toward a lead is never right (same philosophy as the carcontroller LEAD_ADES).
       if reset_state or force_slow_decel or self.mpc.source != LongitudinalPlanSource.cruise or \
-         output_a_target < DESCENT_RELEASE_ADES:
+         output_a_target < DESCENT_RELEASE_ADES or self.approach_active:
         self.descent_active = False
         self.descent_bte = False
         self.descent_floor = ACCEL_MIN
