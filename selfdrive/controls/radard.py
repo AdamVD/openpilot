@@ -29,6 +29,17 @@ V_EGO_STATIONARY = 4.   # no stationary object flag below this speed
 RADAR_TO_CENTER = 2.7   # (deprecated) RADAR is ~ 2.7m ahead from center of car
 RADAR_TO_CAMERA = 1.52  # RADAR is ~ 1.5m ahead from center of mesh frame
 
+# Phantom-lead gate (2026-07-25, lead-jump filter findings). Set PHANTOM_LEAD_GATE = False
+# for a byte-identical revert to stock matching. See match_vision_to_track() for the
+# mechanism and the measurements; the tuned pair (50 m, 5 m/s) is variant "V1b-1S(5)".
+PHANTOM_LEAD_GATE = True
+PHANTOM_LEAD_GATE_MIN_DIST = 50.  # m; below this the matcher is bit-identical to stock
+PHANTOM_LEAD_GATE_DV = 5.         # m/s; radar-vs-vision lead-speed disagreement that disqualifies
+PHANTOM_LEAD_GATE_2CB = 5.        # 2 * COMFORT_BRAKE from longitudinal_mpc_lib.long_mpc; the
+                                  # stopping-equivalence the planner itself uses to rank obstacles.
+                                  # ⚠ keep in sync if COMFORT_BRAKE is ever retuned (it is compiled
+                                  # into the acados solver, so a change there needs `scons`).
+
 
 class KalmanParams:
   def __init__(self, dt: float):
@@ -131,6 +142,33 @@ def match_vision_to_track(v_ego: float, lead: capnp._DynamicStructReader, tracks
     return prob_d * prob_y * prob_v
 
   track = max(tracks.values(), key=prob)
+
+  # Odyssey NIDEC phantom-lead gate (2026-07-25, FINDINGS lead-jump filter).
+  # Beyond ~50 m the NIDEC radar drops and re-creates points constantly (Track lifetime 1-4
+  # frames), so this matcher routinely picks a DIFFERENT vehicle: worst recorded case accepted
+  # 74 m / vLead 20.1 while the vision lead read 91 m / v 29.7 -> planner aTarget -0.21 -> -1.24
+  # in 0.4 s. Stock vel_sane cannot catch it: `or (v_ego + track.vRel > 3)` is unconditionally
+  # true on any highway, and the 10 m/s bound is looser than the 6.3 m/s MEDIAN disagreement
+  # measured on burst-producing frames (model vStd is 1.0-1.5 m/s, so 5 m/s is >3 sigma).
+  # ONE-SIDED on purpose: reject only when falling back to the vision lead RELAXES the braking
+  # demand, so this can never invent a brake event (measured: 69% of two-sided rejections would
+  # have substituted a CLOSER obstacle). Returning None does NOT blank the lead -- the caller
+  # falls through to get_RadarState_from_vision(), which is continuous (measured: 0 of 3661
+  # rejections corpus-wide had no vision fallback available).
+  # Measured: fires on 0.65% of far radar-matched engaged frames (0.40% of all engaged lead
+  # frames, ~0.29/min); worst recorded burst aTarget -1.707 -> -0.194; 15.8% of snap-back-
+  # attributed decel onsets fully suppressed, 31.6% pushed below the felt threshold;
+  # 0-frame worst-case latency on 80 genuine close-range decel onsets and 40 cut-ins, 0 NEVERs
+  # outside the phantom class, trace RMS p95 0.0003 m/s^2.
+  # Both radarState leads run through here (get_lead() is called twice and on this car
+  # leadTwo.dRel == leadOne.dRel on 95.2% of engaged frames, and long_mpc takes the min of
+  # both obstacles -- a filter applied only to leadOne would be a bit-exact no-op).
+  if PHANTOM_LEAD_GATE and offset_vision_dist > PHANTOM_LEAD_GATE_MIN_DIST and \
+     abs(track.vRel + v_ego - lead.v[0]) >= PHANTOM_LEAD_GATE_DV:
+    x_track = track.dRel + max(track.vRel + v_ego, 0.) ** 2 / PHANTOM_LEAD_GATE_2CB
+    x_vis = offset_vision_dist + max(lead.v[0], 0.) ** 2 / PHANTOM_LEAD_GATE_2CB
+    if x_vis > x_track:
+      return None
 
   # if no 'sane' match is found return -1
   # stationary radar points can be false positives

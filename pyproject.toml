@@ -143,6 +143,12 @@ testpaths = [
   "tools",
   "cereal",
   "sunnypilot",
+  # The fork's Honda NIDEC longitudinal work lives in the opendbc submodule, and nothing
+  # else in this repo runs opendbc's suite (opendbc_repo/test.sh needs uv + lefthook, and
+  # the addopts --ignore=opendbc/ covers the root alias, not opendbc_repo/). Collect just
+  # the Honda tests so the carcontroller invariants and the exact-revert golden are
+  # actually enforced by `pytest` and by CI.
+  "opendbc_repo/opendbc/car/honda/tests",
 ]
 
 [tool.codespell]
