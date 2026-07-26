@@ -87,10 +87,35 @@ APPROACH_THW_ON = 2.5         # s; engage inside genuine follow/approach range
 APPROACH_THW_OFF = 2.8        # s; release hysteresis
 APPROACH_VREL_ON = -0.3       # m/s; engage: meaningfully closing (vRel < 0 = lead slower)
 APPROACH_VREL_OFF = -0.1      # m/s; hold until closing has essentially stopped
-APPROACH_CAP = -0.15          # m/s^2; ease-off while closing, not just coast (7/19 first drive:
-                              # a 0.0 cap let the servo hold speed straight into the mark -- stock
-                              # enters at -0.16 median; pairs with the opendbc honest-friction fix
-                              # that makes a -0.15 ask actually deliverable while lift-guarded)
+APPROACH_CAP = 0.0            # m/s^2. 2026-07-25: REVERTED -0.15 -> 0.0 (the 7/18 value).
+                              # This is min-stacked onto output_a_target, so a NEGATIVE value is
+                              # not a cap at all -- it is a decel FLOOR: while the latch holds, the
+                              # plan commands at least -0.15 no matter what the MPC wants. Measured
+                              # over the 7/25 40 mph lead-follow event (47.3 s, 100 Hz): the MPC's
+                              # own ask never went below -0.324 and averaged -0.026, yet the command
+                              # reached -0.510. Signed attribution of the deep command
+                              # (acmd = raw_MPC + CAP + P + I): raw -0.082 / CAP -0.103 / P -0.023 /
+                              # I -0.159 -- 71.5% manufactured downstream of the MPC. On the 13.1 s
+                              # where the cap bound exactly, the MPC wanted POSITIVE accel and the
+                              # car was accelerating (aEgo +0.074) while the command was -0.31.
+                              # The integrator supplies the rest: it cannot see the delivery layer
+                              # discarding the command, so ki=0.170 winds -0.15 into -0.40 in ~6 s.
+                              # Why it becomes FRICTION rather than a lift: NIDEC_LIFT_PO_FLOOR/CEIL
+                              # = +-0.30 was calibrated as the pcm_off band that delivers aEgo ~ 0,
+                              # so a -0.15 ask inside that band is unservable by the lift channel --
+                              # friction is the only channel left. The 7/18 pairing (cap 0.0 with
+                              # that band) was self-consistent; the 7/19 change broke it. Measured:
+                              # the frames where cap 0.0 removes friction have aTarget median -0.000
+                              # and 0.7% unserved -- it deletes an unservable ask, it does not create
+                              # an unserved one.
+                              # Evidence it is the right value, from Adam's 7/25 evening drive: on
+                              # his "accel burst -> light brake hit" cycle (two cycles, he cancelled
+                              # 1.2 s after the second) the cap supplied 80-113% of the command while
+                              # the raw ask was POSITIVE; cap 0.0 removes 68% of the friction duty,
+                              # 75% of the onsets, 82% of the VSA pump kicks, and 100% of the brake
+                              # tap he cancelled on. On the approach he praised as "solid" in the
+                              # same drive the cap contributed 1.7%, so this is provably inert there.
+                              # Restore -0.15 for an exact revert to ed58b3c81.
 APPROACH_RELEASE_RATE = 0.5   # m/s^2 per s; cap ramps back to inert on release
 
 # 2026-07-11 (design rev 2 after the 10-angle review, 7/12): descent-mode tolerance floor
